@@ -3,13 +3,36 @@ use crate::git::interface::GitInterface;
 use crate::model::QualifiedPath;
 use colored::Colorize;
 use itertools::Itertools;
+use std::collections::HashMap;
 use std::fmt::Display;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeSuccess {
+    pub paths: Vec<QualifiedPath>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeConflict {
+    pub paths: Vec<QualifiedPath>,
+    pub failed_at: usize,
+}
+
+#[derive(Debug)]
+pub struct MergeError {
+    pub paths: Vec<QualifiedPath>,
+    pub error: GitError,
+}
+impl PartialEq for MergeError {
+    fn eq(&self, other: &Self) -> bool {
+        other.paths == self.paths
+    }
+}
 
 #[derive(Debug)]
 pub enum ConflictStatistic {
-    Success(Vec<QualifiedPath>),
-    Conflict(Vec<QualifiedPath>, usize),
-    Error(Vec<QualifiedPath>, GitError),
+    Success(MergeSuccess),
+    Conflict(MergeConflict),
+    Error(MergeError),
 }
 
 impl PartialEq for ConflictStatistic {
@@ -19,14 +42,12 @@ impl PartialEq for ConflictStatistic {
                 Self::Success(self_paths) => other_paths == self_paths,
                 _ => false,
             },
-            Self::Conflict(other_paths, other_index) => match self {
-                Self::Conflict(self_paths, self_index) => {
-                    other_paths == self_paths && other_index == self_index
-                }
+            Self::Conflict(other_paths) => match self {
+                Self::Conflict(self_paths) => other_paths == self_paths,
                 _ => false,
             },
-            Self::Error(other_paths, _) => match self {
-                Self::Error(self_paths, _) => other_paths == self_paths,
+            Self::Error(other_paths) => match self {
+                Self::Error(self_paths) => other_paths == self_paths,
                 _ => false,
             },
         }
@@ -64,18 +85,22 @@ impl Display for ConflictStatistic {
             }
         }
         let formatted = match self {
-            ConflictStatistic::Success(paths) => {
-                format!("{} {}", format(paths, None, false), "OK".green())
+            ConflictStatistic::Success(success) => {
+                format!("{} {}", format(&success.paths, None, false), "OK".green())
             }
-            ConflictStatistic::Conflict(paths, index) => {
-                format!("{} {}", format(paths, Some(index), false), "CONFLICT".red())
+            ConflictStatistic::Conflict(conflict) => {
+                format!(
+                    "{} {}",
+                    format(&conflict.paths, Some(&conflict.failed_at), false),
+                    "CONFLICT".red()
+                )
             }
-            ConflictStatistic::Error(paths, error) => {
+            ConflictStatistic::Error(failure) => {
                 format!(
                     "{} {}:\n{}",
-                    format(paths, None, true),
+                    format(&failure.paths, None, true),
                     "ERROR".red(),
-                    error.to_string().red()
+                    failure.error.to_string().red()
                 )
             }
         };
@@ -117,8 +142,8 @@ impl ConflictStatistics {
     pub fn push(&mut self, statistic: ConflictStatistic) {
         match statistic {
             ConflictStatistic::Success(_) => self.ok.push(statistic),
-            ConflictStatistic::Conflict(_, _) => self.conflict.push(statistic),
-            ConflictStatistic::Error(_, _) => self.error.push(statistic),
+            ConflictStatistic::Conflict(_) => self.conflict.push(statistic),
+            ConflictStatistic::Error(_) => self.error.push(statistic),
         }
     }
     pub fn iter_all(&self) -> impl Iterator<Item = &ConflictStatistic> {
@@ -165,7 +190,7 @@ impl<'a> ConflictChecker<'a> {
         Self { interface }
     }
 
-    pub fn check_n_to_n_permutations(
+    pub fn check_k_permutations(
         &self,
         paths: Vec<QualifiedPath>,
         k: usize,
@@ -177,15 +202,15 @@ impl<'a> ConflictChecker<'a> {
         Ok(iterator)
     }
 
-    pub fn check_1_to_n_permutations(
+    pub fn check_k_permutations_against_base(
         &self,
-        source: &QualifiedPath,
         targets: Vec<QualifiedPath>,
+        base: &QualifiedPath,
         k: usize,
     ) -> Result<impl Iterator<Item = ConflictStatistic>, GitError> {
-        let iterator = targets.into_iter().permutations(k).map(move |target| {
+        let iterator = targets.into_iter().permutations(k).map(|target| {
             let mut to_check: Vec<QualifiedPath> = vec![];
-            to_check.push(source.clone());
+            to_check.push(base.clone());
             to_check.extend(target);
             let statistic = self.check_chain(&to_check);
             self.build_statistic(to_check, statistic)
@@ -193,10 +218,26 @@ impl<'a> ConflictChecker<'a> {
         Ok(iterator)
     }
 
-    fn check_chain(
+    pub fn check_k_permutations_against_multiple(
         &self,
-        chain: &Vec<QualifiedPath>,
-    ) -> Result<Option<usize>, GitError> {
+        left: Vec<QualifiedPath>,
+        right: Vec<QualifiedPath>,
+        k: usize,
+    ) -> Result<impl Iterator<Item = ConflictStatistic>, GitError> {
+        if k < 1 { panic!("k must be at least 1") }
+        let iterator = left.into_iter().flat_map(move |l| {
+            right.clone().into_iter().permutations(k).flat_map(move |r| {
+                let mut to_check: Vec<QualifiedPath> = vec![l.clone()];
+                to_check.extend(r.iter().map(|p| p.clone()));
+                self.check_k_permutations(to_check, k+1)
+            })
+        }).flatten();
+        Ok(iterator)
+    }
+
+    pub fn clean_up(&mut self) {}
+
+    fn check_chain(&self, chain: &Vec<QualifiedPath>) -> Result<Option<usize>, GitError> {
         if chain.len() < 2 {
             panic!("Chain has to contain at least 2 paths")
         }
@@ -227,10 +268,74 @@ impl<'a> ConflictChecker<'a> {
     ) -> ConflictStatistic {
         match result {
             Ok(stat) => match stat {
-                None => ConflictStatistic::Success(paths),
-                Some(value) => ConflictStatistic::Conflict(paths, value),
+                None => ConflictStatistic::Success(MergeSuccess { paths }),
+                Some(value) => ConflictStatistic::Conflict(MergeConflict {
+                    paths,
+                    failed_at: value,
+                }),
             },
-            Err(e) => ConflictStatistic::Error(paths, e),
+            Err(e) => ConflictStatistic::Error(MergeError { paths, error: e }),
         }
+    }
+}
+
+pub struct Conflict2DMatrix {
+    matrix: HashMap<(QualifiedPath, QualifiedPath), i32>,
+}
+
+impl Conflict2DMatrix {
+    pub fn initialize(paths: &Vec<QualifiedPath>) -> Self {
+        let mut matrix: HashMap<(QualifiedPath, QualifiedPath), i32> = HashMap::new();
+        for combinations in paths.iter().combinations(2) {
+            matrix.insert((combinations[0].clone(), combinations[1].clone()), 0);
+            matrix.insert((combinations[1].clone(), combinations[0].clone()), 0);
+        }
+        Self { matrix }
+    }
+}
+
+pub struct ConflictAnalyzer<'a> {
+    checker: ConflictChecker<'a>,
+}
+
+impl<'a> ConflictAnalyzer<'a> {
+    pub fn new(checker: ConflictChecker<'a>) -> Self {
+        Self { checker }
+    }
+
+    pub fn calculate_2d_vote_greedy_heuristics_matrix_with_merge_base(
+        &mut self,
+        paths: Vec<QualifiedPath>,
+        base: QualifiedPath,
+    ) -> Result<Conflict2DMatrix, GitError> {
+        let mut all = vec![base.clone()];
+        all.extend(paths.iter().map(|path| path.clone()));
+        let matrix = Conflict2DMatrix::initialize(&all);
+
+        let mut conflicting_with_base: Vec<QualifiedPath> = vec![];
+        for s in self
+            .checker
+            .check_k_permutations_against_base(paths.clone(), &base, 1)?
+        {
+            match s {
+                ConflictStatistic::Conflict(merge) => {
+                    conflicting_with_base.push(merge.paths[1].clone());
+                }
+                ConflictStatistic::Error(merge) => return Err(merge.error),
+                _ => {}
+            }
+        }
+        let to_test_with_base: Vec<QualifiedPath> = paths
+            .iter()
+            .filter(|path| !conflicting_with_base.contains(path))
+            .cloned()
+            .collect();
+
+        for with_base in self.checker.check_k_permutations_against_base(to_test_with_base, &base, 3) {
+            // TODO
+        }
+        for without_base in self.checker
+        self.checker.clean_up();
+        Ok(matrix)
     }
 }

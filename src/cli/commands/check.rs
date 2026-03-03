@@ -43,7 +43,7 @@ fn run_check(context: &CommandContext) -> Result<ConflictStatistics, Box<dyn Err
                 .iter_children_req()
                 .map(|child| child.get_qualified_path())
                 .collect();
-            checker.check_n_to_n_permutations(all_features, 2)?.collect()
+            checker.check_k_permutations(all_features, 2)?.collect()
         }
         // all is not set, source is set, target not => check source against all
         (false, Some(source), None) => {
@@ -72,7 +72,7 @@ fn run_check(context: &CommandContext) -> Result<ConflictStatistics, Box<dyn Err
                 })
                 .collect();
             checker
-                .check_1_to_n_permutations(&qualified_source, all_other_features, 2)?
+                .check_k_permutations_against_base(all_other_features, &qualified_source, 2)?
                 .collect()
         }
         (false, Some(source), Some(targets)) => {
@@ -82,7 +82,7 @@ fn run_check(context: &CommandContext) -> Result<ConflictStatistics, Box<dyn Err
                 .map(|target| current_path.get_qualified_path() + QualifiedPath::from(target))
                 .collect();
             checker
-                .check_1_to_n_permutations(&qualified_source, qualified_targets, 2)?
+                .check_k_permutations_against_base(qualified_targets, &qualified_source, 2)?
                 .collect()
         }
     };

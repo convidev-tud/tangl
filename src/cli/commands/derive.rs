@@ -413,7 +413,7 @@ fn calculate_features_without_conflicts(
     let (id_to_path, path_to_id) = map_paths_to_id(features);
     let conflicts: ConflictStatistics =
         ConflictChecker::new(&context.git, ConflictCheckBaseBranch::Current)
-            .check_n_to_n_permutations(features)?
+            .check_k_permutations(features)?
             .collect();
     if conflicts.n_errors() > 0 {
         return Err("Errors occurred while checking for conflicts.".into());
