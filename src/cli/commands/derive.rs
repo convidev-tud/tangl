@@ -322,11 +322,11 @@ fn handle_derivation(
             ));
             context.git.merge(&vec![to_merge])?;
             context.info(format!(
-                "\nPlease solve all conflicts and commit your changes. Thereafter, run {} to continue the derivation.",
+                "\nPlease solve all conflicts and commit your changes; thereafter, run {} to continue the derivation",
                 "tangl derive --continue".purple()
             ));
             context.info(format!(
-                "Use {} to abort the current derivation process.",
+                "Use {} to abort the current derivation process",
                 "tangl derive --abort".purple()
             ));
         }

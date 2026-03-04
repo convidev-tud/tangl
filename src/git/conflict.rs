@@ -339,12 +339,12 @@ impl Conflict2DMatrix {
     pub fn calculate_best_path_greedy(&self) -> Vec<QualifiedPath> {
         let mut missing = self.all_keys.clone();
         missing.remove(0);
-        let mut path = vec![self.all_keys[0].clone()];
+        let mut final_path = vec![self.all_keys[0].clone()];
         while missing.len() > 0 {
             let mut votes: HashMap<i32, Vec<QualifiedPath>> = HashMap::new();
             for candidate in missing.iter() {
                 let mut vote = 0;
-                for p in path.iter() {
+                for p in final_path.iter() {
                     vote += self.matrix[p].get(candidate).unwrap();
                 }
                 if votes.contains_key(&vote) {
@@ -360,10 +360,10 @@ impl Conflict2DMatrix {
                 1 => { max_candidates[0].clone() }
                 _ => {
                     let start = max_candidates[0].clone();
-                    let compatibility = self.calculate_compatibility(&start);
+                    let compatibility = self.calculate_forward_compatibility(&start, &missing);
                     let mut highest_compatible = (start, compatibility);
                     for candidate in max_candidates[1..].iter() {
-                        let compatibility = self.calculate_compatibility(&candidate);
+                        let compatibility = self.calculate_forward_compatibility(&candidate, &missing);
                         if compatibility > highest_compatible.1 {
                             highest_compatible = (candidate.clone(), compatibility);
                         }
@@ -381,14 +381,23 @@ impl Conflict2DMatrix {
                 })
                 .unwrap();
             missing.remove(index);
-            path.push(winner);
+            final_path.push(winner);
         };
-        path
+        final_path
     }
 
-    fn calculate_compatibility(&self, path: &QualifiedPath) -> i32 {
-        let table = &self.matrix[path];
-        table.values().sum::<i32>()
+    fn calculate_forward_compatibility(&self, element: &QualifiedPath, missing: &Vec<QualifiedPath>) -> i32 {
+        let table = &self.matrix[element];
+        table
+            .iter()
+            .filter_map(|(k, v)| {
+                if missing.contains(k) {
+                    Some(*v)
+                } else {
+                    None
+                }
+            })
+            .sum::<i32>()
     }
 }
 
