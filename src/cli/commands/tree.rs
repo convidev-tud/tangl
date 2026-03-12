@@ -32,12 +32,15 @@ impl CommandDefinition for LSCommand {
 impl CommandInterface for LSCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let current = context.git.get_current_qualified_path()?;
-        let target = current
+        let mut target = current
             + context
                 .arg_helper
                 .get_argument_value::<String>(TARGET)
                 .unwrap()
                 .to_qualified_path();
+        if target.is_dir() {
+            target = target.strip_n_right(target.len()-1)
+        }
         let show_tags = context
             .arg_helper
             .get_argument_value::<bool>(SHOW_TAGS)
