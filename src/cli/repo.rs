@@ -80,7 +80,7 @@ impl CommandRepository {
         &self,
         arg_source: ArgSource,
         import_format: ImportFormat,
-    ) -> CommandContext {
+    ) -> CommandContext<'_> {
         let args: ArgMatches = match arg_source {
             ArgSource::CLI => self.command_map.clap_command.clone().get_matches(),
             ArgSource::SUPPLIED(supplied) => self

@@ -52,7 +52,7 @@ impl ModelImporter {
 pub struct WaffleImporter;
 
 impl FormatParser for WaffleImporter {
-    fn parse(&self, data: &str) -> Vec<QualifiedPath> {
+    fn parse(&self, _data: &str) -> Vec<QualifiedPath> {
         todo!()
     }
 }

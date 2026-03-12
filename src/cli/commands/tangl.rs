@@ -1,7 +1,7 @@
 use crate::cli::completion::CompletionHelper;
 use crate::cli::*;
 use crate::model::ImportFormat;
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, Command};
 use std::error::Error;
 
 #[derive(Clone, Debug)]

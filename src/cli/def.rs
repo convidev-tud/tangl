@@ -4,7 +4,6 @@ use crate::git::interface::GitInterface;
 use crate::model::ImportFormat;
 use crate::util::u8_to_string;
 use clap::{ArgMatches, Command};
-use colored::{Color, Colorize};
 use log::{LevelFilter, debug, error, info, trace, warn};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};

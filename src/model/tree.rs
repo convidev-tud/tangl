@@ -1,7 +1,5 @@
 use crate::model::error::WrongNodeTypeError;
 use crate::model::*;
-use colored::Colorize;
-use std::error::Error;
 use std::rc::Rc;
 
 pub const FEATURES_PREFIX: &str = "feature";

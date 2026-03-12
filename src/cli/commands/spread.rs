@@ -1,5 +1,4 @@
 use crate::cli::*;
-use crate::model::ConcreteNodePathType;
 use clap::Command;
 use std::error::Error;
 
@@ -15,7 +14,7 @@ impl CommandDefinition for SpreadCommand {
 }
 
 impl CommandInterface for SpreadCommand {
-    fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
+    fn run_command(&self, _context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         // let current_path = context.git.get_current_node_path()?;
         // let current_branch = current_path.to_qualified_path();
         // let merge_argument = vec![current_branch.clone()];

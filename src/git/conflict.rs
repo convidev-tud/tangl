@@ -487,7 +487,7 @@ impl<'a> ConflictAnalyzer<'a> {
             .filter(|path| !conflicting_with_base.contains(&path.to_qualified_path()))
             .cloned()
             .collect();
-        let to_test_without_base: Vec<NodePath<BranchAble>> = paths
+        let _to_test_without_base: Vec<NodePath<BranchAble>> = paths
             .iter()
             .filter(|path| conflicting_with_base.contains(&path.to_qualified_path()))
             .cloned()

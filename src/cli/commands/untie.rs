@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::model::{ConcreteNodePathType, QualifiedPath};
+use crate::model::QualifiedPath;
 use clap::{Arg, Command};
 use std::error::Error;
 
@@ -42,7 +42,7 @@ impl CommandDefinition for UntieCommand {
 }
 
 impl CommandInterface for UntieCommand {
-    fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
+    fn run_command(&self, _context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         // let current = match context.git.get_current_node_path()?.concretize() {
         //     ConcreteNodePathType::Product(path) => path,
         //     _ => {

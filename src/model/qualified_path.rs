@@ -1,4 +1,3 @@
-use colored::Colorize;
 use std::fmt::{Display, Formatter};
 use std::ops::{Add, Index};
 
