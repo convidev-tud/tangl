@@ -1,5 +1,6 @@
 mod commit;
 mod derivation;
+mod error;
 mod importer;
 mod node;
 mod node_path;
@@ -10,6 +11,7 @@ mod tree;
 
 pub use commit::*;
 pub use derivation::*;
+pub use error::*;
 pub use importer::*;
 pub use node::*;
 pub use node_path::*;

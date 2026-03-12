@@ -1,9 +1,10 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::model::{BranchAble, QualifiedPath};
+use crate::model::{BranchAble, NodeError, QualifiedPath, ToQualifiedPath};
+use crate::util::u8_to_string;
 use clap::{Arg, Command};
-use colored::Colorize;
 use std::error::Error;
+use colored::Colorize;
 
 #[derive(Clone, Debug)]
 pub struct CheckoutCommand;
@@ -22,26 +23,47 @@ impl CommandInterface for CheckoutCommand {
             .get_argument_value::<String>("branch")
             .unwrap();
         let full_target = context.git.get_current_qualified_path()? + QualifiedPath::from(branch);
-        let maybe_node_path = context.git.get_model().get_node_path(&full_target);
-        if let Some(node_path) = maybe_node_path {
-            let maybe_concrete = node_path.try_convert_to::<BranchAble>();
-            if let Some(concrete_branch) = maybe_concrete {
-                let result = context.git.checkout(&concrete_branch)?;
-                context.log_from_output(&result);
-                Ok(())
+        let node_path = match context
+            .git
+            .get_model()
+            .assert_path::<BranchAble>(&full_target)
+        {
+            Ok(node_path) => node_path,
+            Err(error) => return match error {
+                NodeError::NodeNotFound(_) => {
+                    Err(format!(
+                        "Cannot checkout {}: path does not exist",
+                        full_target.to_string()
+                    )
+                        .into())
+                }
+                NodeError::WrongNodeType(_) => {
+                    Err(format!(
+                        "Cannot checkout {}: target does not support branches",
+                        full_target
+                    )
+                        .into())
+                }
+            },
+        };
+        let current = context.git.get_current_qualified_path()?;
+        let out = context.git.checkout(&node_path)?;
+        if out.status.success() {
+            if current == node_path.to_qualified_path() {
+                context.info(format!(
+                    "Already on branch {}",
+                    node_path.to_string().blue(),
+                ));
             } else {
-                Err(format!(
-                    "fatal: path {} is no valid target for checkout",
-                    full_target.to_string().red()
-                )
-                .into())
+                context.info(format!(
+                    "Switched to {} branch {}",
+                    node_path.get_actual_type().get_formatted_name(),
+                    node_path.to_string().blue(),
+                ));
             }
+            Ok(())
         } else {
-            Err(format!(
-                "fatal: cannot checkout path {}: does not exist",
-                full_target.to_string().red()
-            )
-            .into())
+            Err(u8_to_string(&out.stderr).into())
         }
     }
     fn shell_complete(

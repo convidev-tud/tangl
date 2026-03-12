@@ -1,7 +1,6 @@
-use crate::model::{FEATURES_PREFIX, PRODUCTS_PREFIX};
+use crate::model::*;
 use colored::{ColoredString, Colorize};
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Debug;
 
 pub trait SymbolicNodeType: Clone + Debug {
     fn identifier() -> String;
@@ -11,22 +10,6 @@ pub trait SymbolicNodeType: Clone + Debug {
     fn is_compatible_to_node_type(node_type: &NodeType) -> bool;
 }
 pub trait CanHaveBranch: SymbolicNodeType {}
-
-#[derive(Debug, Clone)]
-pub struct WrongNodeTypeError {
-    msg: String,
-}
-impl WrongNodeTypeError {
-    pub fn new<S: Into<String>>(msg: S) -> WrongNodeTypeError {
-        WrongNodeTypeError { msg: msg.into() }
-    }
-}
-impl Display for WrongNodeTypeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.msg)
-    }
-}
-impl Error for WrongNodeTypeError {}
 
 #[derive(Clone, Debug)]
 pub struct Feature;

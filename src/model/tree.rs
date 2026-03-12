@@ -1,3 +1,4 @@
+use crate::model::error::WrongNodeTypeError;
 use crate::model::*;
 use colored::Colorize;
 use std::error::Error;
@@ -56,30 +57,33 @@ impl TreeDataModel {
     pub fn get_qualified_paths_with_branches(&self) -> &Vec<QualifiedPath> {
         &self.qualified_paths_with_branch
     }
+    pub fn assert_path<T: SymbolicNodeType>(
+        &self,
+        path: &QualifiedPath,
+    ) -> Result<NodePath<T>, NodeError> {
+        if let Some(node_path) = self.get_node_path(path) {
+            if let Some(concrete) = node_path.try_convert_to::<T>() {
+                Ok(concrete)
+            } else {
+                Err(WrongNodeTypeError::new(format!(
+                    "NodeTypeError for {}: expected to be of type '{}', but is of type '{}'",
+                    node_path,
+                    T::identifier(),
+                    node_path.get_actual_type().get_type_name()
+                ))
+                .into())
+            }
+        } else {
+            Err(NodeNotFoundError::new(format!("Path {} does not exist", path)).into())
+        }
+    }
     pub fn assert_all<T: SymbolicNodeType>(
         &self,
         paths: &Vec<QualifiedPath>,
-    ) -> Result<Vec<NodePath<T>>, Box<dyn Error>> {
+    ) -> Result<Vec<NodePath<T>>, NodeError> {
         let mut final_paths: Vec<NodePath<T>> = vec![];
         for path in paths.iter() {
-            if let Some(path) = self.get_node_path(path) {
-                if let Some(f) = path.try_convert_to::<T>() {
-                    final_paths.push(f);
-                } else {
-                    return Err(format!(
-                        "Path {} is not of type {}",
-                        path.to_string().red(),
-                        T::identifier()
-                    )
-                    .into());
-                }
-            } else {
-                return Err(format!(
-                    "Path {} does not exist in current working tree",
-                    path.to_string().red()
-                )
-                .into());
-            }
+            final_paths.push(self.assert_path::<T>(path)?);
         }
         Ok(final_paths)
     }
