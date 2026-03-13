@@ -2,9 +2,10 @@ use crate::cli::completion::CompletionHelper;
 use crate::cli::*;
 use crate::git::conflict::{ConflictChecker, ConflictStatistics};
 use crate::model::{
-    ByGlobFilteringNodePathTransformer, ChainingNodePathTransformer, ConcreteBranch, ConcreteFeature,
-    ConcreteProduct, FeatureMetadata, FilteringMode, HasBranchFilteringNodePathTransformer,
-    NodePath, NodePathTransformer, NodePathTransformers, QualifiedPath, ToQualifiedPath,
+    ByGlobFilteringNodePathTransformer, ChainingNodePathTransformer, ConcreteBranch,
+    ConcreteFeature, ConcreteProduct, FeatureMetadata, FilteringMode,
+    HasBranchFilteringNodePathTransformer, NodePath, NodePathTransformer, NodePathTransformers,
+    QualifiedPath, ToQualifiedPath,
 };
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
@@ -166,7 +167,8 @@ impl CommandInterface for CheckCommand {
                     .git
                     .get_model()
                     .assert_all::<ConcreteBranch>(&features)?;
-                let mut final_paths: Vec<NodePath<ConcreteBranch>> = vec![product.try_convert_to().unwrap()];
+                let mut final_paths: Vec<NodePath<ConcreteBranch>> =
+                    vec![product.try_convert_to().unwrap()];
                 final_paths.extend(node_paths);
                 run_checks(&final_paths, None, Some(1), false, false, &checker)?
             } else {

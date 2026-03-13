@@ -174,16 +174,14 @@ impl GitInterface {
         let commands = vec!["branch", "-D", branch.as_str()];
         Ok(self.raw_git_interface.run(commands)?)
     }
-    pub fn delete_branch<T: HasBranch>(
-        &mut self,
-        path: NodePath<T>,
-    ) -> Result<Output, GitError> {
+    pub fn delete_branch<T: HasBranch>(&mut self, path: NodePath<T>) -> Result<Output, GitError> {
         self.delete_branch_no_mut(&path.to_qualified_path())
     }
     pub fn merge<T: HasBranch>(&self, path: &NodePath<T>) -> Result<Output, GitError> {
-        Ok(self
-            .raw_git_interface
-            .run(vec!["merge", path.to_qualified_path().to_git_branch().as_str()])?)
+        Ok(self.raw_git_interface.run(vec![
+            "merge",
+            path.to_qualified_path().to_git_branch().as_str(),
+        ])?)
     }
     pub fn abort_merge(&self) -> Result<Output, GitError> {
         Ok(self.raw_git_interface.run(vec!["merge", "--abort"])?)
@@ -209,7 +207,11 @@ impl GitInterface {
         let raw_hashes = u8_to_string(
             &self
                 .raw_git_interface
-                .run(vec!["log", "--format=%H", branch.to_qualified_path().to_git_branch().as_str()])?
+                .run(vec![
+                    "log",
+                    "--format=%H",
+                    branch.to_qualified_path().to_git_branch().as_str(),
+                ])?
                 .stdout,
         )
         .trim()

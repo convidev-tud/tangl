@@ -19,10 +19,14 @@ fn approximate_merge_order(
 ) -> Result<ConflictStatistic, Box<dyn Error>> {
     let checker = ConflictChecker::new(&context.git);
     let mut analyzer = ConflictAnalyzer::new(checker, context);
-    let transformed: Vec<NodePath<ConcreteBranch>> =
-        features.iter().map(|p| p.try_convert_to().unwrap()).collect();
-    let matrix = analyzer
-        .calculate_2d_heuristics_matrix_with_merge_base(&transformed, &product.try_convert_to().unwrap())?;
+    let transformed: Vec<NodePath<ConcreteBranch>> = features
+        .iter()
+        .map(|p| p.try_convert_to().unwrap())
+        .collect();
+    let matrix = analyzer.calculate_2d_heuristics_matrix_with_merge_base(
+        &transformed,
+        &product.try_convert_to().unwrap(),
+    )?;
     Ok(matrix.calculate_best_path_greedy())
 }
 
@@ -329,7 +333,10 @@ impl CommandInterface for DeriveCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let current_area = context.git.get_current_area()?;
         let current_path = context.git.get_current_node_path()?;
-        let product_path = match current_path.as_any_type().try_convert_to::<ConcreteProduct>() {
+        let product_path = match current_path
+            .as_any_type()
+            .try_convert_to::<ConcreteProduct>()
+        {
             Some(path) => path,
             _ => {
                 return Err(format!(

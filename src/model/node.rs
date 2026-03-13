@@ -52,8 +52,16 @@ impl Node {
         if self.metadata.has_branch {
             formatted = formatted.blue()
         }
-        formatted = self.node_type.format_node_display(formatted);
-        let mut tree = Tree::<String>::new(formatted.to_string());
+        let type_display = match self.node_type {
+            NodeType::AbstractFeature | NodeType::AbstractProduct => None,
+            _ => Some(self.node_type.get_formatted_short_name()),
+        };
+        let content = if let Some(type_display) = type_display {
+            format!("{formatted} [{type_display}]")
+        } else {
+            formatted.to_string()
+        };
+        let mut tree = Tree::<String>::new(content);
         let mut sorted_children = self.children.iter().collect::<Vec<_>>();
         sorted_children.sort_by(|a, b| b.0.chars().cmp(a.0.chars()));
         sorted_children.reverse();
@@ -80,7 +88,8 @@ impl Node {
         let new_type = if is_tag {
             NodeType::Tag
         } else {
-            self.node_type.decide_next_type(real_name.as_str(), metadata)?
+            self.node_type
+                .decide_next_type(real_name.as_str(), metadata)?
         };
         Ok(new_type)
     }
@@ -154,7 +163,7 @@ impl Node {
                 match self.get_child_mut(&name) {
                     Some(_) => {
                         self.update_child(name, metadata, is_tag)?;
-                    },
+                    }
                     None => {
                         self.add_child(name.clone(), metadata, is_tag)?;
                     }

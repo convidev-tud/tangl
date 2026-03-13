@@ -1,9 +1,9 @@
 use crate::model::*;
+use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
 use std::rc::Rc;
-use itertools::Itertools;
 
 #[derive(Clone, Debug)]
 pub struct NodePath<T: SymbolicNodeType> {
@@ -112,11 +112,10 @@ impl<T: SymbolicNodeType> NodePath<T> {
         self.get_node().has_children()
     }
     pub fn iter_children(&self) -> impl Iterator<Item = NodePath<AnyNode>> {
-        self.get_node().iter_children().map(|(name, _)| {
-            self.clone()
-                .move_to(&name.to_qualified_path())
-                .unwrap()
-        }).sorted()
+        self.get_node()
+            .iter_children()
+            .map(|(name, _)| self.clone().move_to(&name.to_qualified_path()).unwrap())
+            .sorted()
     }
     pub fn iter_children_req(&self) -> impl Iterator<Item = NodePath<AnyNode>> {
         self.iter_children().flat_map(|path| {

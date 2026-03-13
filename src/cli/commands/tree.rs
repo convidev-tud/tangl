@@ -39,7 +39,7 @@ impl CommandInterface for LSCommand {
                 .unwrap()
                 .to_qualified_path();
         if target.is_dir() {
-            target = target.strip_n_right(target.len()-1)
+            target = target.strip_n_right(target.len() - 1)
         }
         let show_tags = context
             .arg_helper
@@ -81,7 +81,7 @@ impl CommandInterface for LSCommand {
                     let root = context.git.get_model().get_virtual_root();
                     completion_helper.complete_qualified_paths(
                         current,
-                        root.iter_children_req().map(|p|p.to_qualified_path()),
+                        root.iter_children_req().map(|p| p.to_qualified_path()),
                     )
                 }
                 _ => vec![],

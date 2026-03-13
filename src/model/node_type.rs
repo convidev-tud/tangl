@@ -211,9 +211,7 @@ impl SymbolicNodeType for ConcreteBranch {
 
     fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
         match node_type {
-            NodeType::ConcreteFeature |
-            NodeType::ConcreteProduct |
-            NodeType::ConcreteArea => true,
+            NodeType::ConcreteFeature | NodeType::ConcreteProduct | NodeType::ConcreteArea => true,
             _ => false,
         }
     }
@@ -234,20 +232,26 @@ pub enum NodeType {
 }
 
 impl NodeType {
-    pub fn decide_next_type(&self, name: &str, metadata: &NodeMetadata) -> Result<NodeType, WrongNodeTypeError> {
+    pub fn decide_next_type(
+        &self,
+        name: &str,
+        metadata: &NodeMetadata,
+    ) -> Result<NodeType, WrongNodeTypeError> {
         match self {
-            Self::ConcreteFeature |
-            Self::AbstractFeature |
-            Self::FeatureRoot => {
-                if metadata.has_branch() { Ok(Self::ConcreteFeature) }
-                else { Ok(Self::AbstractFeature) }
-            },
-            Self::ConcreteProduct |
-            Self::AbstractProduct |
-            Self::ProductRoot => {
-                if metadata.has_branch() { Ok(Self::ConcreteProduct) }
-                else { Ok(Self::AbstractProduct) }
-            },
+            Self::ConcreteFeature | Self::AbstractFeature | Self::FeatureRoot => {
+                if metadata.has_branch() {
+                    Ok(Self::ConcreteFeature)
+                } else {
+                    Ok(Self::AbstractFeature)
+                }
+            }
+            Self::ConcreteProduct | Self::AbstractProduct | Self::ProductRoot => {
+                if metadata.has_branch() {
+                    Ok(Self::ConcreteProduct)
+                } else {
+                    Ok(Self::AbstractProduct)
+                }
+            }
             Self::VirtualRoot => Ok(Self::ConcreteArea),
             Self::ConcreteArea => {
                 if name.starts_with(FEATURES_PREFIX) {
@@ -292,8 +296,28 @@ impl NodeType {
         name.to_string()
     }
 
+    pub fn get_short_type_name(&self) -> String {
+        let name: &str = match self {
+            Self::VirtualRoot => "vr",
+            Self::ConcreteArea => "a",
+            Self::FeatureRoot => "fr",
+            Self::ProductRoot => "pr",
+            Self::ConcreteFeature => "f",
+            Self::AbstractFeature => "f'",
+            Self::ConcreteProduct => "p",
+            Self::AbstractProduct => "p'",
+            Self::Tag => "t",
+        };
+        name.to_string()
+    }
+
     pub fn get_formatted_name(&self) -> String {
         self.format_node_display(self.get_type_name().normal())
+            .to_string()
+    }
+
+    pub fn get_formatted_short_name(&self) -> String {
+        self.format_node_display(self.get_short_type_name().normal())
             .to_string()
     }
 }

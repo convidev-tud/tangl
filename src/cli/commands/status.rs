@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::model::{DerivationState, ConcreteProduct};
+use crate::model::{ConcreteProduct, DerivationState};
 use crate::util::u8_to_string;
 use clap::Command;
 use colored::Colorize;
