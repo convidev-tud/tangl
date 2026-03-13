@@ -2,9 +2,9 @@ use crate::cli::completion::CompletionHelper;
 use crate::cli::*;
 use crate::git::conflict::{ConflictChecker, ConflictStatistics};
 use crate::model::{
-    BranchAble, ByGlobFilteringNodePathTransformer, ChainingNodePathTransformer, Feature,
+    ConcreteBranch, ByGlobFilteringNodePathTransformer, ChainingNodePathTransformer, ConcreteFeature,
     FeatureMetadata, FilteringMode, HasBranchFilteringNodePathTransformer, NodePath,
-    NodePathTransformer, NodePathTransformers, Product, QualifiedPath, ToQualifiedPath,
+    NodePathTransformer, NodePathTransformers, ConcreteProduct, QualifiedPath, ToQualifiedPath,
 };
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
@@ -17,7 +17,7 @@ const ONE_TO_N: &str = "one_to_n";
 const PERM_TO_BASE: &str = "perm_to_base";
 
 fn run_checks(
-    paths: &Vec<NodePath<BranchAble>>,
+    paths: &Vec<NodePath<ConcreteBranch>>,
     permutations: Option<usize>,
     perm_to_base: Option<usize>,
     by_order: bool,
@@ -138,8 +138,7 @@ impl CommandInterface for CheckCommand {
             && !one_to_n
         {
             let current_path = context.git.get_current_node_path()?;
-            let current_any = current_path.as_any_type();
-            if current_any.try_convert_to::<Feature>().is_some() {
+            if current_path.try_convert_to::<ConcreteFeature>().is_some() {
                 let feature_root = context
                     .git
                     .get_current_area()?
@@ -150,11 +149,11 @@ impl CommandInterface for CheckCommand {
                     if &path == &current_path {
                         None
                     } else {
-                        Some(path.as_branch_able())
+                        Some(path.try_convert_to().unwrap())
                     }
                 }));
                 run_checks(&paths, None, None, false, true, &checker)?
-            } else if let Some(product) = current_any.try_convert_to::<Product>() {
+            } else if let Some(product) = current_path.try_convert_to::<ConcreteProduct>() {
                 let derivation_commits = context.git.get_derivation_commits(&product)?;
                 let maybe_last = derivation_commits.first();
                 if maybe_last.is_none() {
@@ -165,8 +164,8 @@ impl CommandInterface for CheckCommand {
                 let node_paths = context
                     .git
                     .get_model()
-                    .assert_all::<BranchAble>(&features)?;
-                let mut final_paths: Vec<NodePath<BranchAble>> = vec![product.as_branch_able()];
+                    .assert_all::<ConcreteBranch>(&features)?;
+                let mut final_paths: Vec<NodePath<ConcreteBranch>> = vec![product.try_convert_to().unwrap()];
                 final_paths.extend(node_paths);
                 run_checks(&final_paths, None, Some(1), false, false, &checker)?
             } else {
@@ -191,9 +190,9 @@ impl CommandInterface for CheckCommand {
             ]);
             let root = context.git.get_model().get_virtual_root();
             let iterator = root.iter_children_req();
-            let final_paths: Vec<NodePath<BranchAble>> = node_finder
+            let final_paths: Vec<NodePath<ConcreteBranch>> = node_finder
                 .transform(iterator)
-                .map(|path| path.try_convert_to::<BranchAble>().unwrap())
+                .map(|path| path.try_convert_to::<ConcreteBranch>().unwrap())
                 .collect();
             let perm: Option<usize> = match permutations {
                 Some(p) => Some(p.parse()?),

@@ -12,7 +12,7 @@ fn delete_product(
     let area = context.git.get_current_area()?;
     let complete_path = area.get_path_to_product_root() + product;
     if let Some(path) = context.git.get_model().get_node_path(&complete_path) {
-        if let Some(product) = path.as_any_type().try_convert_to::<Product>() {
+        if let Some(product) = path.as_any_type().try_convert_to::<ConcreteProduct>() {
             let output = context.git.delete_branch(product)?;
             if output.status.success() {
                 context.info(format!(

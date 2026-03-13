@@ -7,15 +7,16 @@ use std::error::Error;
 
 fn add_feature(feature: QualifiedPath, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
     let node_path = context.git.get_current_node_path()?;
-    let current_path = if let Some(path) = node_path.as_any_type().try_convert_to::<Feature>() {
+    let current_path = if let Some(path) = node_path.try_convert_to::<ConcreteFeature>() {
         path.to_qualified_path()
-    } else if let Some(path) = node_path.as_any_type().try_convert_to::<Area>() {
+    } else if let Some(path) = node_path.as_any_type().try_convert_to::<ConcreteArea>() {
         path.get_path_to_feature_root()
     } else {
         return Err(Box::new(CommandError::new(
             "Cannot create feature: Current branch is not a feature or area branch",
         )));
     };
+    drop(node_path);
     let target_path = current_path + feature;
     let output = context.git.create_branch(&target_path)?;
     context.log_from_output(&output);
@@ -33,7 +34,7 @@ fn delete_feature(
     let complete_path = area.get_path_to_feature_root() + feature;
     let node_path = context.git.get_model().get_node_path(&complete_path);
     if let Some(path) = node_path {
-        if let Some(feature) = path.as_any_type().try_convert_to::<Feature>() {
+        if let Some(feature) = path.as_any_type().try_convert_to::<ConcreteFeature>() {
             let output = context.git.delete_branch(feature)?;
             if output.status.success() {
                 context.info(format!(
@@ -148,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_feature_add_root_from_area() {
-        fn check_existence(interface: &GitInterface) -> Option<NodePath<Feature>> {
+        fn check_existence(interface: &GitInterface) -> Option<NodePath<ConcreteFeature>> {
             interface
                 .get_current_area()
                 .unwrap()
@@ -181,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_feature_add_recursive_from_area() {
-        fn check_existence(interface: &GitInterface) -> Option<NodePath<Feature>> {
+        fn check_existence(interface: &GitInterface) -> Option<NodePath<ConcreteFeature>> {
             interface
                 .get_current_area()
                 .unwrap()

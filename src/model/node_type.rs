@@ -9,23 +9,59 @@ pub trait SymbolicNodeType: Clone + Debug {
     }
     fn is_compatible_to_node_type(node_type: &NodeType) -> bool;
 }
-pub trait CanHaveBranch: SymbolicNodeType {}
+
+pub trait HasFeatureChildren: SymbolicNodeType {}
+pub trait HasProductChildren: SymbolicNodeType {}
+pub trait HasBranch: SymbolicNodeType {}
+
+#[derive(Clone, Debug)]
+pub struct ConcreteFeature;
+impl SymbolicNodeType for ConcreteFeature {
+    fn identifier() -> String {
+        NodeType::ConcreteFeature.get_type_name()
+    }
+
+    fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
+        match node_type {
+            NodeType::ConcreteFeature => true,
+            _ => false,
+        }
+    }
+}
+impl HasFeatureChildren for ConcreteFeature {}
+impl HasBranch for ConcreteFeature {}
+
+#[derive(Clone, Debug)]
+pub struct AbstractFeature;
+impl SymbolicNodeType for AbstractFeature {
+    fn identifier() -> String {
+        NodeType::AbstractFeature.get_type_name()
+    }
+
+    fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
+        match node_type {
+            NodeType::AbstractFeature => true,
+            _ => false,
+        }
+    }
+}
+impl HasFeatureChildren for AbstractFeature {}
 
 #[derive(Clone, Debug)]
 pub struct Feature;
 impl SymbolicNodeType for Feature {
     fn identifier() -> String {
-        NodeType::Feature.get_type_name()
+        NodeType::AbstractFeature.get_type_name()
     }
 
     fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
         match node_type {
-            NodeType::Feature => true,
+            NodeType::AbstractFeature | NodeType::ConcreteFeature => true,
             _ => false,
         }
     }
 }
-impl CanHaveBranch for Feature {}
+impl HasFeatureChildren for Feature {}
 
 #[derive(Clone, Debug)]
 pub struct FeatureRoot;
@@ -41,22 +77,56 @@ impl SymbolicNodeType for FeatureRoot {
         }
     }
 }
+impl HasFeatureChildren for FeatureRoot {}
+
+#[derive(Clone, Debug)]
+pub struct ConcreteProduct;
+impl SymbolicNodeType for ConcreteProduct {
+    fn identifier() -> String {
+        NodeType::ConcreteProduct.get_type_name()
+    }
+
+    fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
+        match node_type {
+            NodeType::ConcreteProduct => true,
+            _ => false,
+        }
+    }
+}
+impl HasProductChildren for ConcreteProduct {}
+impl HasBranch for ConcreteProduct {}
+
+#[derive(Clone, Debug)]
+pub struct AbstractProduct;
+impl SymbolicNodeType for AbstractProduct {
+    fn identifier() -> String {
+        NodeType::ConcreteProduct.get_type_name()
+    }
+
+    fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
+        match node_type {
+            NodeType::ConcreteProduct => true,
+            _ => false,
+        }
+    }
+}
+impl HasProductChildren for AbstractProduct {}
 
 #[derive(Clone, Debug)]
 pub struct Product;
 impl SymbolicNodeType for Product {
     fn identifier() -> String {
-        NodeType::Product.get_type_name()
+        NodeType::ConcreteProduct.get_type_name()
     }
 
     fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
         match node_type {
-            NodeType::Product => true,
+            NodeType::ConcreteProduct | NodeType::AbstractProduct => true,
             _ => false,
         }
     }
 }
-impl CanHaveBranch for Product {}
+impl HasProductChildren for Product {}
 
 #[derive(Clone, Debug)]
 pub struct ProductRoot;
@@ -72,22 +142,23 @@ impl SymbolicNodeType for ProductRoot {
         }
     }
 }
+impl HasProductChildren for ProductRoot {}
 
 #[derive(Clone, Debug)]
-pub struct Area;
-impl SymbolicNodeType for Area {
+pub struct ConcreteArea;
+impl SymbolicNodeType for ConcreteArea {
     fn identifier() -> String {
-        NodeType::Area.get_type_name()
+        NodeType::ConcreteArea.get_type_name()
     }
 
     fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
         match node_type {
-            NodeType::Area => true,
+            NodeType::ConcreteArea => true,
             _ => false,
         }
     }
 }
-impl CanHaveBranch for Area {}
+impl HasBranch for ConcreteArea {}
 
 #[derive(Clone, Debug)]
 pub struct VirtualRoot;
@@ -118,7 +189,6 @@ impl SymbolicNodeType for Tag {
         }
     }
 }
-impl CanHaveBranch for Tag {}
 
 #[derive(Clone, Debug)]
 pub struct AnyNode;
@@ -133,41 +203,53 @@ impl SymbolicNodeType for AnyNode {
 }
 
 #[derive(Clone, Debug)]
-pub struct BranchAble;
-impl SymbolicNodeType for BranchAble {
+pub struct ConcreteBranch;
+impl SymbolicNodeType for ConcreteBranch {
     fn identifier() -> String {
         "branch able".to_string()
     }
 
     fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
         match node_type {
-            NodeType::Feature | NodeType::Product | NodeType::Area => true,
+            NodeType::ConcreteFeature |
+            NodeType::ConcreteProduct |
+            NodeType::ConcreteArea => true,
             _ => false,
         }
     }
 }
-impl CanHaveBranch for BranchAble {}
+impl HasBranch for ConcreteBranch {}
 
 #[derive(Clone, Debug)]
 pub enum NodeType {
-    Feature,
-    Product,
+    ConcreteFeature,
+    AbstractFeature,
+    ConcreteProduct,
+    AbstractProduct,
     FeatureRoot,
     ProductRoot,
-    Area,
+    ConcreteArea,
     VirtualRoot,
     Tag,
 }
 
 impl NodeType {
-    pub fn build_child_from_name(&mut self, name: &str) -> Result<NodeType, WrongNodeTypeError> {
+    pub fn decide_next_type(&mut self, name: &str, metadata: &NodeMetadata) -> Result<NodeType, WrongNodeTypeError> {
         match self {
-            Self::Feature => Ok(Self::Feature),
-            Self::Product => Ok(Self::Product),
-            Self::FeatureRoot => Ok(Self::Feature),
-            Self::ProductRoot => Ok(Self::Product),
-            Self::VirtualRoot => Ok(Self::Area),
-            Self::Area => {
+            Self::ConcreteFeature |
+            Self::AbstractFeature |
+            Self::FeatureRoot => {
+                if metadata.has_branch() { Ok(Self::ConcreteFeature) }
+                else { Ok(Self::AbstractFeature) }
+            },
+            Self::ConcreteProduct |
+            Self::AbstractProduct |
+            Self::ProductRoot => {
+                if metadata.has_branch() { Ok(Self::ConcreteProduct) }
+                else { Ok(Self::AbstractProduct) }
+            },
+            Self::VirtualRoot => Ok(Self::ConcreteArea),
+            Self::ConcreteArea => {
                 if name.starts_with(FEATURES_PREFIX) {
                     Ok(Self::FeatureRoot)
                 } else if name.starts_with(PRODUCTS_PREFIX) {
@@ -185,11 +267,11 @@ impl NodeType {
 
     pub fn format_node_display(&self, name: ColoredString) -> ColoredString {
         match self {
-            Self::Area => name.yellow().bold(),
+            Self::ConcreteArea => name.yellow().bold(),
             Self::FeatureRoot => name.bright_purple().bold().italic(),
-            Self::Feature => name.purple(),
+            Self::ConcreteFeature => name.purple(),
             Self::ProductRoot => name.truecolor(231, 100, 18).bold().italic(),
-            Self::Product => name.truecolor(231, 100, 18),
+            Self::ConcreteProduct => name.truecolor(231, 100, 18),
             Self::Tag => name.green(),
             _ => name,
         }
@@ -198,11 +280,13 @@ impl NodeType {
     pub fn get_type_name(&self) -> String {
         let name: &str = match self {
             Self::VirtualRoot => "virtual root",
-            Self::Area => "area",
+            Self::ConcreteArea => "area",
             Self::FeatureRoot => "feature root",
             Self::ProductRoot => "product root",
-            Self::Feature => "feature",
-            Self::Product => "product",
+            Self::ConcreteFeature => "feature",
+            Self::AbstractFeature => "abstract feature",
+            Self::ConcreteProduct => "product",
+            Self::AbstractProduct => "abstract product",
             Self::Tag => "tag",
         };
         name.to_string()

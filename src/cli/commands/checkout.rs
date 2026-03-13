@@ -1,6 +1,6 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::model::{BranchAble, NodeError, QualifiedPath, ToQualifiedPath};
+use crate::model::{ConcreteBranch, NodeError, QualifiedPath, ToQualifiedPath};
 use crate::util::u8_to_string;
 use clap::{Arg, Command};
 use colored::Colorize;
@@ -26,7 +26,7 @@ impl CommandInterface for CheckoutCommand {
         let node_path = match context
             .git
             .get_model()
-            .assert_path::<BranchAble>(&full_target)
+            .assert_path::<ConcreteBranch>(&full_target)
         {
             Ok(node_path) => node_path,
             Err(error) => {

@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::model::{DerivationState, Product};
+use crate::model::{DerivationState, ConcreteProduct};
 use crate::util::u8_to_string;
 use clap::Command;
 use colored::Colorize;
@@ -34,7 +34,7 @@ impl CommandInterface for StatusCommand {
         );
         context.info(first_line);
 
-        if let Some(product) = current_path.try_convert_to::<Product>() {
+        if let Some(product) = current_path.try_convert_to::<ConcreteProduct>() {
             let derivation_commits = context.git.get_derivation_commits(&product)?;
             let maybe_last = derivation_commits.first();
             if let Some(last) = maybe_last {

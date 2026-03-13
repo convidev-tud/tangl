@@ -13,16 +13,16 @@ const ABORT: &str = "abort";
 const OPTIMIZATION: &str = "optimization";
 
 fn approximate_merge_order(
-    features: &Vec<NodePath<Feature>>,
-    product: &NodePath<Product>,
+    features: &Vec<NodePath<ConcreteFeature>>,
+    product: &NodePath<ConcreteProduct>,
     context: &CommandContext,
 ) -> Result<ConflictStatistic, Box<dyn Error>> {
     let checker = ConflictChecker::new(&context.git);
     let mut analyzer = ConflictAnalyzer::new(checker, context);
-    let transformed: Vec<NodePath<BranchAble>> =
-        features.iter().map(|p| p.as_branch_able()).collect();
+    let transformed: Vec<NodePath<ConcreteBranch>> =
+        features.iter().map(|p| p.try_convert_to().unwrap()).collect();
     let matrix = analyzer
-        .calculate_2d_heuristics_matrix_with_merge_base(&transformed, &product.as_branch_able())?;
+        .calculate_2d_heuristics_matrix_with_merge_base(&transformed, &product.try_convert_to().unwrap())?;
     Ok(matrix.calculate_best_path_greedy())
 }
 
@@ -82,8 +82,8 @@ fn handle_continue(
 fn get_next_state(
     progress: Option<&DerivationCommit>,
     optimization: bool,
-    features: &Vec<NodePath<Feature>>,
-    product: &NodePath<Product>,
+    features: &Vec<NodePath<ConcreteFeature>>,
+    product: &NodePath<ConcreteProduct>,
     context: &mut CommandContext,
 ) -> Result<Option<DerivationMetadata>, Box<dyn Error>> {
     let commits = context.git.get_commit_history(product)?;
@@ -129,7 +129,7 @@ fn get_next_state(
             .empty_commit(DerivationCommit::make_derivation_message(&state)?.as_str())?;
     }
 
-    let mut original_order: Vec<NodePath<Feature>> = vec![];
+    let mut original_order: Vec<NodePath<ConcreteFeature>> = vec![];
     for missing in state.get_missing() {
         if let Some(path) = context
             .git
@@ -248,7 +248,7 @@ fn handle_derivation(
                 .get_model()
                 .get_node_path(&progress.get_missing()[0].get_qualified_path())
                 .unwrap()
-                .try_convert_to::<Feature>()
+                .try_convert_to::<ConcreteFeature>()
                 .unwrap();
             context.info(format!(
                 "\nNow merging:\n\n   {}",
@@ -271,11 +271,11 @@ fn handle_derivation(
 fn assert_features_exist(
     features: &Vec<QualifiedPath>,
     git: &GitInterface,
-) -> Result<Vec<NodePath<Feature>>, Box<dyn Error>> {
-    let mut paths: Vec<NodePath<Feature>> = vec![];
+) -> Result<Vec<NodePath<ConcreteFeature>>, Box<dyn Error>> {
+    let mut paths: Vec<NodePath<ConcreteFeature>> = vec![];
     for feature in features.iter() {
         if let Some(path) = git.get_model().get_node_path(feature) {
-            if let Some(f) = path.try_convert_to::<Feature>() {
+            if let Some(f) = path.try_convert_to::<ConcreteFeature>() {
                 paths.push(f);
             } else {
                 return Err(format!("Path {} is not a feature", feature.to_string().red()).into());
@@ -329,7 +329,7 @@ impl CommandInterface for DeriveCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let current_area = context.git.get_current_area()?;
         let current_path = context.git.get_current_node_path()?;
-        let product_path = match current_path.as_any_type().try_convert_to::<Product>() {
+        let product_path = match current_path.as_any_type().try_convert_to::<ConcreteProduct>() {
             Some(path) => path,
             _ => {
                 return Err(format!(

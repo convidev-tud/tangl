@@ -77,7 +77,7 @@ impl Node {
         let new_type = if is_tag {
             NodeType::Tag
         } else {
-            self.node_type.build_child_from_name(real_name.as_str())?
+            self.node_type.decide_next_type(real_name.as_str(), &metadata)?
         };
         self.children.insert(
             real_name.clone(),
@@ -190,7 +190,7 @@ mod tests {
     use super::*;
 
     fn prepare_node() -> Node {
-        let mut node = Node::new("root", NodeType::Feature, NodeMetadata::default());
+        let mut node = Node::new("root", NodeType::ConcreteFeature, NodeMetadata::default());
         node.insert_node_path(
             &QualifiedPath::from("foo/f1"),
             NodeMetadata::default(),

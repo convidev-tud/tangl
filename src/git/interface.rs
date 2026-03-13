@@ -121,7 +121,7 @@ impl GitInterface {
         base.push(self.get_current_branch()?);
         Ok(base)
     }
-    pub fn get_current_node_path(&self) -> Result<NodePath<BranchAble>, GitError> {
+    pub fn get_current_node_path(&self) -> Result<NodePath<ConcreteBranch>, GitError> {
         let current_qualified_path = self.get_current_qualified_path()?;
         Ok(self
             .model
@@ -130,7 +130,7 @@ impl GitInterface {
             .try_convert_to()
             .unwrap())
     }
-    pub fn get_current_area(&self) -> Result<NodePath<Area>, GitError> {
+    pub fn get_current_area(&self) -> Result<NodePath<ConcreteArea>, GitError> {
         let current_qualified_path = self.get_current_qualified_path()?;
         let qualified_path = QualifiedPath::from(&current_qualified_path[1]);
         Ok(self.model.get_area(&qualified_path).unwrap())
@@ -150,7 +150,7 @@ impl GitInterface {
             .raw_git_interface
             .run(vec!["checkout", path.to_git_branch().as_str()])?)
     }
-    pub fn checkout<T: CanHaveBranch>(&self, path: &NodePath<T>) -> Result<Output, GitError> {
+    pub fn checkout<T: HasBranch>(&self, path: &NodePath<T>) -> Result<Output, GitError> {
         self.checkout_raw(&path.to_qualified_path())
     }
     pub(super) fn create_branch_no_mut(&self, path: &QualifiedPath) -> Result<Output, GitError> {
@@ -174,16 +174,16 @@ impl GitInterface {
         let commands = vec!["branch", "-D", branch.as_str()];
         Ok(self.raw_git_interface.run(commands)?)
     }
-    pub fn delete_branch<T: CanHaveBranch>(
+    pub fn delete_branch<T: HasBranch>(
         &mut self,
         path: NodePath<T>,
     ) -> Result<Output, GitError> {
         self.delete_branch_no_mut(&path.to_qualified_path())
     }
-    pub fn merge<T: CanHaveBranch>(&self, path: &NodePath<T>) -> Result<Output, GitError> {
+    pub fn merge<T: HasBranch>(&self, path: &NodePath<T>) -> Result<Output, GitError> {
         Ok(self
             .raw_git_interface
-            .run(vec!["merge", path.to_git_branch().as_str()])?)
+            .run(vec!["merge", path.to_qualified_path().to_git_branch().as_str()])?)
     }
     pub fn abort_merge(&self) -> Result<Output, GitError> {
         Ok(self.raw_git_interface.run(vec!["merge", "--abort"])?)
@@ -202,14 +202,14 @@ impl GitInterface {
             .raw_git_interface
             .run(vec!["tag", "-d", tagged.to_git_branch().as_str()])?)
     }
-    pub fn get_commit_history<T: CanHaveBranch>(
+    pub fn get_commit_history<T: HasBranch>(
         &self,
         branch: &NodePath<T>,
     ) -> Result<Vec<BaseCommit>, GitError> {
         let raw_hashes = u8_to_string(
             &self
                 .raw_git_interface
-                .run(vec!["log", "--format=%H", branch.to_git_branch().as_str()])?
+                .run(vec!["log", "--format=%H", branch.to_qualified_path().to_git_branch().as_str()])?
                 .stdout,
         )
         .trim()
@@ -235,7 +235,7 @@ impl GitInterface {
     }
     pub fn get_derivation_commits(
         &self,
-        path: &NodePath<Product>,
+        path: &NodePath<ConcreteProduct>,
     ) -> Result<Vec<DerivationCommit>, GitError> {
         let mut derivation_commits: Vec<DerivationCommit> = vec![];
         for commit in self.get_commit_history(path)? {

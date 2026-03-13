@@ -35,7 +35,7 @@ impl TreeDataModel {
         self.qualified_paths_with_branch.push(path);
         Ok(())
     }
-    pub fn get_area(&self, path: &QualifiedPath) -> Option<NodePath<Area>> {
+    pub fn get_area(&self, path: &QualifiedPath) -> Option<NodePath<ConcreteArea>> {
         self.get_virtual_root().to_area(path)
     }
     pub fn get_virtual_root(&self) -> NodePath<VirtualRoot> {

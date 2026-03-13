@@ -4,52 +4,21 @@ use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub trait NodePathBasicNavigation
-where
-    Self: Sized,
-{
-    fn move_to(self, path: &QualifiedPath) -> Option<NodePath<AnyNode>>;
-    fn move_to_last_valid(self, path: &QualifiedPath) -> NodePath<AnyNode>;
-}
-pub trait NodePathFeatureNavigation: NodePathBasicNavigation
-where
-    Self: Sized,
-{
-    fn move_to_feature(self, path: &QualifiedPath) -> Option<NodePath<Feature>> {
-        self.move_to(path)?.try_convert_to()
-    }
-}
-pub trait NodePathProductNavigation: NodePathBasicNavigation
-where
-    Self: Sized,
-{
-    fn move_to_product(self, path: &QualifiedPath) -> Option<NodePath<Product>> {
-        self.move_to(path)?.try_convert_to()
-    }
-}
-
-pub enum ConcreteNodePathType {
-    Feature(NodePath<Feature>),
-    FeatureRoot(NodePath<FeatureRoot>),
-    Product(NodePath<Product>),
-    ProductRoot(NodePath<ProductRoot>),
-    Area(NodePath<Area>),
-    VirtualRoot(NodePath<VirtualRoot>),
-    Tag(NodePath<Tag>),
-}
-
 #[derive(Clone, Debug)]
 pub struct NodePath<T: SymbolicNodeType> {
     path: Vec<Rc<Node>>,
     _phantom: PhantomData<T>,
 }
 
-impl<T: CanHaveBranch> NodePath<T> {
-    pub fn to_git_branch(&self) -> String {
-        self.to_qualified_path().to_git_branch()
+impl<T: HasFeatureChildren> NodePath<T> {
+    pub fn move_to_feature(self, path: &QualifiedPath) -> Option<NodePath<Feature>> {
+        self.move_to(path)?.try_convert_to()
     }
-    pub fn as_branch_able(&self) -> NodePath<BranchAble> {
-        NodePath::new(self.path.clone())
+}
+
+impl<T: HasProductChildren> NodePath<T> {
+    pub fn move_to_product(self, path: &QualifiedPath) -> Option<NodePath<Product>> {
+        self.move_to(path)?.try_convert_to()
     }
 }
 
@@ -60,12 +29,12 @@ impl NodePath<AnyNode> {
 }
 
 impl NodePath<VirtualRoot> {
-    pub fn to_area(self, area: &QualifiedPath) -> Option<NodePath<Area>> {
+    pub fn to_area(self, area: &QualifiedPath) -> Option<NodePath<ConcreteArea>> {
         self.move_to(area)?.try_convert_to()
     }
 }
 
-impl NodePath<Area> {
+impl NodePath<ConcreteArea> {
     pub fn get_path_to_feature_root(&self) -> QualifiedPath {
         self.to_qualified_path() + QualifiedPath::from(FEATURES_PREFIX)
     }
@@ -83,20 +52,14 @@ impl NodePath<Area> {
 }
 
 impl NodePath<FeatureRoot> {
-    pub fn iter_root_features(&self) -> impl Iterator<Item = NodePath<Feature>> {
+    pub fn iter_root_features(&self) -> impl Iterator<Item = NodePath<ConcreteFeature>> {
         self.iter_children().map(|p| p.try_convert_to().unwrap())
     }
-    pub fn iter_features_req(&self) -> impl Iterator<Item = NodePath<Feature>> {
+    pub fn iter_features_req(&self) -> impl Iterator<Item = NodePath<ConcreteFeature>> {
         self.iter_children_req()
             .map(|p| p.try_convert_to().unwrap())
     }
 }
-
-impl NodePathProductNavigation for NodePath<ProductRoot> {}
-impl NodePathProductNavigation for NodePath<Product> {}
-
-impl NodePathFeatureNavigation for NodePath<FeatureRoot> {}
-impl NodePathFeatureNavigation for NodePath<Feature> {}
 
 impl<T: SymbolicNodeType> ToQualifiedPath for NodePath<T> {
     fn to_qualified_path(&self) -> QualifiedPath {
@@ -124,6 +87,25 @@ impl<T: SymbolicNodeType> NodePath<T> {
         } else {
             None
         }
+    }
+    pub fn move_to(mut self, path: &QualifiedPath) -> Option<NodePath<AnyNode>> {
+        for p in path.iter_string() {
+            self.path.push(self.get_node().get_child(p)?.clone());
+        }
+        Some(NodePath::<AnyNode>::new(self.path))
+    }
+
+    pub fn move_to_last_valid(self, path: &QualifiedPath) -> NodePath<AnyNode> {
+        let mut current = self.as_any_type();
+        for part in path.iter() {
+            let next = current.clone().move_to(&part);
+            if next.is_some() {
+                current = next.unwrap();
+            } else {
+                break;
+            }
+        }
+        current
     }
     pub fn has_children(&self) -> bool {
         self.get_node().has_children()
@@ -163,28 +145,6 @@ impl<T: SymbolicNodeType> NodePath<T> {
     }
     pub fn display_tree(&self, show_tags: bool) -> String {
         self.get_node().display_tree(show_tags)
-    }
-}
-
-impl<T: SymbolicNodeType> NodePathBasicNavigation for NodePath<T> {
-    fn move_to(mut self, path: &QualifiedPath) -> Option<NodePath<AnyNode>> {
-        for p in path.iter_string() {
-            self.path.push(self.get_node().get_child(p)?.clone());
-        }
-        Some(NodePath::<AnyNode>::new(self.path))
-    }
-
-    fn move_to_last_valid(self, path: &QualifiedPath) -> NodePath<AnyNode> {
-        let mut current = self.as_any_type();
-        for part in path.iter() {
-            let next = current.clone().move_to(&part);
-            if next.is_some() {
-                current = next.unwrap();
-            } else {
-                break;
-            }
-        }
-        current
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::model::{Feature, NodePath, QualifiedPath, ToQualifiedPath};
+use crate::model::{ConcreteFeature, NodePath, QualifiedPath, ToQualifiedPath};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use uuid::Uuid;
@@ -14,7 +14,7 @@ impl FeatureMetadata {
     pub fn from_qualified_paths(paths: &Vec<QualifiedPath>) -> Vec<Self> {
         paths.iter().map(|path| Self::new(path.clone())).collect()
     }
-    pub fn from_features(features: &Vec<NodePath<Feature>>) -> Vec<Self> {
+    pub fn from_features(features: &Vec<NodePath<ConcreteFeature>>) -> Vec<Self> {
         features
             .iter()
             .map(|path| Self::new(path.to_qualified_path()))
