@@ -9,6 +9,7 @@ pub const PRODUCTS_PREFIX: &str = "product";
 pub struct TreeDataModel {
     virtual_root: Rc<Node>,
     qualified_paths_with_branch: Vec<QualifiedPath>,
+    unknowns_exist: bool,
 }
 impl TreeDataModel {
     pub fn new() -> Self {
@@ -19,6 +20,7 @@ impl TreeDataModel {
                 NodeMetadata::default(),
             )),
             qualified_paths_with_branch: vec![],
+            unknowns_exist: false,
         }
     }
     pub fn insert_qualified_path(
@@ -29,17 +31,21 @@ impl TreeDataModel {
         if !path.is_absolute() {
             panic!("To insert a path, it must be absolute");
         }
-        Rc::get_mut(&mut self.virtual_root)
+        let node_type = Rc::get_mut(&mut self.virtual_root)
             .unwrap()
             .insert_node_path(&path.strip_n_left(1), NodeMetadata::new(true), is_tag)?;
         self.qualified_paths_with_branch.push(path);
+        match node_type {
+            NodeType::Unknown => self.unknowns_exist = true,
+            _ => {}
+        }
         Ok(())
     }
     pub fn get_area(&self, path: &QualifiedPath) -> Option<NodePath<ConcreteArea>> {
         self.get_virtual_root().to_area(path)
     }
     pub fn get_virtual_root(&self) -> NodePath<VirtualRoot> {
-        NodePath::<VirtualRoot>::new(vec![self.virtual_root.clone()])
+        NodePath::<VirtualRoot>::new(vec![self.virtual_root.clone()], self.unknowns_exist)
     }
     pub fn get_node_path(&self, path: &QualifiedPath) -> Option<NodePath<AnyNode>> {
         let initial_path = self.get_virtual_root();

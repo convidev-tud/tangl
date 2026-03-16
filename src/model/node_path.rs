@@ -8,6 +8,7 @@ use std::rc::Rc;
 #[derive(Clone, Debug)]
 pub struct NodePath<T: SymbolicNodeType> {
     path: Vec<Rc<Node>>,
+    unknown_mode: bool,
     _phantom: PhantomData<T>,
 }
 
@@ -25,7 +26,7 @@ impl<T: HasProductChildren> NodePath<T> {
 
 impl NodePath<AnyNode> {
     pub fn from_concrete<T: SymbolicNodeType>(other: &NodePath<T>) -> Self {
-        Self::new(other.path.clone())
+        Self::new(other.path.clone(), other.unknown_mode)
     }
 }
 
@@ -43,12 +44,20 @@ impl NodePath<ConcreteArea> {
         self.to_qualified_path() + QualifiedPath::from(PRODUCTS_PREFIX)
     }
     pub fn move_to_feature_root(self) -> Option<NodePath<FeatureRoot>> {
-        self.move_to(&QualifiedPath::from(FEATURES_PREFIX))?
-            .try_convert_to()
+        if self.unknown_mode {
+            Some(NodePath::<FeatureRoot>::new(vec![self.path[0].clone()], self.unknown_mode))
+        } else {
+            self.move_to(&QualifiedPath::from(FEATURES_PREFIX))?
+                .try_convert_to()
+        }
     }
     pub fn move_to_product_root(self) -> Option<NodePath<ProductRoot>> {
-        self.move_to(&QualifiedPath::from(PRODUCTS_PREFIX))?
-            .try_convert_to()
+        if self.unknown_mode {
+            Some(NodePath::<ProductRoot>::new(vec![self.path[0].clone()], self.unknown_mode))
+        } else {
+            self.move_to(&QualifiedPath::from(PRODUCTS_PREFIX))?
+                .try_convert_to()
+        }
     }
 }
 
@@ -76,15 +85,17 @@ impl<T: SymbolicNodeType> NodePath<T> {
     fn get_node(&self) -> &Node {
         self.path.last().unwrap()
     }
-    pub fn new(path: Vec<Rc<Node>>) -> NodePath<T> {
+    pub fn new(path: Vec<Rc<Node>>, unknown_mode: bool) -> NodePath<T> {
         Self {
             path,
+            unknown_mode,
             _phantom: PhantomData,
         }
     }
     pub fn try_convert_to<To: SymbolicNodeType>(&self) -> Option<NodePath<To>> {
-        if To::is_compatible(self.get_node().get_type()) {
-            Some(NodePath::<To>::new(self.path.clone()))
+        let compatible = self.unknown_mode || To::is_compatible(self.get_node().get_type());
+        if compatible {
+            Some(NodePath::<To>::new(self.path.clone(), self.unknown_mode))
         } else {
             None
         }
@@ -93,7 +104,7 @@ impl<T: SymbolicNodeType> NodePath<T> {
         for p in path.iter_string() {
             self.path.push(self.get_node().get_child(p)?.clone());
         }
-        Some(NodePath::<AnyNode>::new(self.path))
+        Some(NodePath::<AnyNode>::new(self.path, self.unknown_mode))
     }
 
     pub fn move_to_last_valid(self, path: &QualifiedPath) -> NodePath<AnyNode> {

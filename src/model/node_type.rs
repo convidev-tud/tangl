@@ -229,6 +229,7 @@ pub enum NodeType {
     ConcreteArea,
     VirtualRoot,
     Tag,
+    Unknown,
 }
 
 impl NodeType {
@@ -259,13 +260,11 @@ impl NodeType {
                 } else if name.starts_with(PRODUCTS_PREFIX) {
                     Ok(Self::ProductRoot)
                 } else {
-                    Err(WrongNodeTypeError::new(format!(
-                        "'{}' is no valid child of an area node. Valid childs include: feature, product",
-                        name
-                    )))
+                    Ok(Self::Unknown)
                 }
             }
             Self::Tag => Err(WrongNodeTypeError::new("Tags cannot have children")),
+            Self::Unknown => Ok(Self::Unknown),
         }
     }
 
@@ -292,6 +291,7 @@ impl NodeType {
             Self::ConcreteProduct => "product",
             Self::AbstractProduct => "abstract product",
             Self::Tag => "tag",
+            Self::Unknown => "",
         };
         name.to_string()
     }
@@ -307,6 +307,7 @@ impl NodeType {
             Self::ConcreteProduct => "p",
             Self::AbstractProduct => "p'",
             Self::Tag => "t",
+            Self::Unknown => "",
         };
         name.to_string()
     }
