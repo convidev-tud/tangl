@@ -203,8 +203,8 @@ impl SymbolicNodeType for AnyNode {
 }
 
 #[derive(Clone, Debug)]
-pub struct ConcreteBranch;
-impl SymbolicNodeType for ConcreteBranch {
+pub struct AnyHasBranch;
+impl SymbolicNodeType for AnyHasBranch {
     fn identifier() -> String {
         "branch able".to_string()
     }
@@ -216,7 +216,7 @@ impl SymbolicNodeType for ConcreteBranch {
         }
     }
 }
-impl HasBranch for ConcreteBranch {}
+impl HasBranch for AnyHasBranch {}
 
 #[derive(Clone, Debug)]
 pub enum NodeType {
@@ -237,34 +237,34 @@ impl NodeType {
         &self,
         name: &str,
         metadata: &NodeMetadata,
-    ) -> Result<NodeType, WrongNodeTypeError> {
+    ) -> NodeType {
         match self {
             Self::ConcreteFeature | Self::AbstractFeature | Self::FeatureRoot => {
                 if metadata.has_branch() {
-                    Ok(Self::ConcreteFeature)
+                    Self::ConcreteFeature
                 } else {
-                    Ok(Self::AbstractFeature)
+                    Self::AbstractFeature
                 }
             }
             Self::ConcreteProduct | Self::AbstractProduct | Self::ProductRoot => {
                 if metadata.has_branch() {
-                    Ok(Self::ConcreteProduct)
+                    Self::ConcreteProduct
                 } else {
-                    Ok(Self::AbstractProduct)
+                    Self::AbstractProduct
                 }
             }
-            Self::VirtualRoot => Ok(Self::ConcreteArea),
+            Self::VirtualRoot => Self::ConcreteArea,
             Self::ConcreteArea => {
                 if name.starts_with(FEATURES_PREFIX) {
-                    Ok(Self::FeatureRoot)
+                    Self::FeatureRoot
                 } else if name.starts_with(PRODUCTS_PREFIX) {
-                    Ok(Self::ProductRoot)
+                    Self::ProductRoot
                 } else {
-                    Ok(Self::Unknown)
+                    Self::Unknown
                 }
             }
-            Self::Tag => Err(WrongNodeTypeError::new("Tags cannot have children")),
-            Self::Unknown => Ok(Self::Unknown),
+            Self::Tag => Self::Unknown,
+            Self::Unknown => Self::Unknown,
         }
     }
 

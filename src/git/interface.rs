@@ -88,7 +88,7 @@ impl GitInterface {
             if !branch.is_empty() {
                 let mut path = QualifiedPath::from("");
                 path.push(branch);
-                self.model.insert_qualified_path(path, false)?;
+                self.model.insert_qualified_path(path, false);
             }
         }
         let tag_output = self.raw_git_interface.run(vec!["tag"])?;
@@ -100,7 +100,7 @@ impl GitInterface {
             if !tag.is_empty() {
                 let mut path = QualifiedPath::from("");
                 path.push(tag);
-                self.model.insert_qualified_path(path, true)?;
+                self.model.insert_qualified_path(path, true);
             }
         }
         Ok(())
@@ -121,14 +121,11 @@ impl GitInterface {
         base.push(self.get_current_branch()?);
         Ok(base)
     }
-    pub fn get_current_node_path(&self) -> Result<NodePath<ConcreteBranch>, GitError> {
+    pub fn get_current_node_path<T: HasBranch>(&self) -> Result<Option<NodePath<T>>, GitError> {
         let current_qualified_path = self.get_current_qualified_path()?;
         Ok(self
             .model
-            .get_node_path(&current_qualified_path)
-            .unwrap()
-            .try_convert_to()
-            .unwrap())
+            .get_node_path::<T>(&current_qualified_path))
     }
     pub fn get_current_area(&self) -> Result<NodePath<ConcreteArea>, GitError> {
         let current_qualified_path = self.get_current_qualified_path()?;
@@ -158,23 +155,31 @@ impl GitInterface {
         let commands = vec!["branch", branch.as_str()];
         Ok(self.raw_git_interface.run(commands)?)
     }
-    pub fn create_branch(&mut self, path: &QualifiedPath) -> Result<Output, GitError> {
+    pub fn create_branch<T: SymbolicNodeType>(&mut self, path: &QualifiedPath) -> Result<NodePath<T>, GitError> {
+        let node_type = self.model.insert_qualified_path(path.clone(), false);
+        if !T::is_compatible(&node_type) {
+            return Err(WrongNodeTypeError::new(node_type.get_formatted_name()).into());
+        }
         let output = self.create_branch_no_mut(path)?;
         if output.status.success() {
-            self.model.insert_qualified_path(path.clone(), false)?;
-            Ok(output)
+            Ok(self.model.get_node_path(&path).unwrap())
         } else {
             Err(GitError::GitInterface(GitInterfaceError::new(
                 u8_to_string(&output.stderr).as_str(),
             )))
         }
     }
-    pub(super) fn delete_branch_no_mut(&self, path: &QualifiedPath) -> Result<Output, GitError> {
+    pub(super) fn delete_branch_no_mut(&self, path: &QualifiedPath) -> Result<(), GitError> {
         let branch = path.to_git_branch();
         let commands = vec!["branch", "-D", branch.as_str()];
-        Ok(self.raw_git_interface.run(commands)?)
+        let out = self.raw_git_interface.run(commands)?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(GitInterfaceError::new(u8_to_string(&out.stderr).as_str()).into())
+        }
     }
-    pub fn delete_branch<T: HasBranch>(&mut self, path: NodePath<T>) -> Result<Output, GitError> {
+    pub fn delete_branch<T: HasBranch>(&mut self, path: NodePath<T>) -> Result<(), GitError> {
         self.delete_branch_no_mut(&path.to_qualified_path())
     }
     pub fn merge<T: HasBranch>(&self, path: &NodePath<T>) -> Result<Output, GitError> {

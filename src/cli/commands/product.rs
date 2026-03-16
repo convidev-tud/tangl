@@ -2,38 +2,33 @@ use crate::cli::completion::*;
 use crate::cli::*;
 use crate::model::*;
 use clap::{Arg, Command};
-use colored::Colorize;
 use std::error::Error;
 
-fn delete_product(
-    product: QualifiedPath,
-    context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
-    let area = context.git.get_current_area()?;
-    let complete_path = area.get_path_to_product_root() + product;
-    if let Some(path) = context.git.get_model().get_node_path(&complete_path) {
-        if let Some(product) = path.as_any_type().try_convert_to::<ConcreteProduct>() {
-            let output = context.git.delete_branch(product)?;
-            if output.status.success() {
-                context.info(format!(
-                    "Deleted product {}",
-                    complete_path.to_string().blue()
-                ));
-            } else {
-                context.log_from_output(&output);
-            }
-            Ok(())
-        } else {
-            Err(format!("Path {} is not a product", path.to_string().red()).into())
-        }
+const PRODUCT: &str = "product";
+
+
+fn add_product(product: QualifiedPath, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
+    let node_path = context.git.get_current_node_path::<AnyHasBranch>()?.unwrap();
+    let current_path = if let Some(path) = node_path.try_convert_to::<ConcreteProduct>() {
+        path.to_qualified_path()
+    } else if let Some(path) = node_path.as_any_type().try_convert_to::<ConcreteArea>() {
+        path.get_path_to_product_root()
     } else {
-        Err(format!(
-            "Cannot delete feature {}: does not exist",
-            complete_path.to_string().red()
-        )
-        .into())
-    }
+        return Err(Box::new(CommandError::new(
+            "Cannot create product: Current branch is not a product or area branch",
+        )));
+    };
+    drop(node_path);
+    let target_path = current_path + product;
+    let result = context.git.create_branch::<ConcreteProduct>(&target_path)?;
+    context.info(format!(
+        "Created new {} {}",
+        NodeType::ConcreteProduct.get_formatted_name(),
+        result.to_qualified_path().strip_n_left(3),
+    ));
+    Ok(())
 }
+
 fn print_product_tree(context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
     let area = context.git.get_current_area()?;
     match area.move_to_product_root() {
@@ -52,9 +47,11 @@ impl CommandDefinition for ProductCommand {
         Command::new("product")
             .about("Manage products")
             .disable_help_subcommand(true)
+            .arg(Arg::new(PRODUCT))
             .arg(
                 Arg::new("delete")
                     .short('D')
+                    .exclusive(true)
                     .help("Deletes a product branch"),
             )
     }
@@ -62,9 +59,18 @@ impl CommandDefinition for ProductCommand {
 impl CommandInterface for ProductCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let maybe_delete = context.arg_helper.get_argument_value::<String>("delete");
+        let maybe_product = context.arg_helper.get_argument_value::<String>(PRODUCT);
+        if maybe_product.is_some() {
+            add_product(maybe_product.unwrap().to_qualified_path(), context)?;
+        }
         match maybe_delete {
             Some(delete) => {
-                delete_product(QualifiedPath::from(delete), context)?;
+                let to_delete = if let Some(current) = context.git.get_current_node_path::<ConcreteProduct>()? {
+                    current.to_qualified_path() + delete.to_qualified_path()
+                } else {
+                    context.git.get_current_area()?.get_path_to_product_root() + delete.to_qualified_path()
+                };
+                delete_path::<ConcreteProduct>(&to_delete, context)?;
                 Ok(())
             }
             None => {

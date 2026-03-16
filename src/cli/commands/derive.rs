@@ -19,7 +19,7 @@ fn approximate_merge_order(
 ) -> Result<ConflictStatistic, Box<dyn Error>> {
     let checker = ConflictChecker::new(&context.git);
     let mut analyzer = ConflictAnalyzer::new(checker, context);
-    let transformed: Vec<NodePath<ConcreteBranch>> = features
+    let transformed: Vec<NodePath<AnyHasBranch>> = features
         .iter()
         .map(|p| p.try_convert_to().unwrap())
         .collect();
@@ -138,9 +138,9 @@ fn get_next_state(
         if let Some(path) = context
             .git
             .get_model()
-            .get_node_path(&missing.get_qualified_path())
+            .get_node_path::<ConcreteFeature>(&missing.get_qualified_path())
         {
-            original_order.push(path.try_convert_to().unwrap());
+            original_order.push(path);
         } else {
             return Err(format!(
                 "Cannot commence derivation: feature {} does not exist in current working tree",
@@ -250,9 +250,7 @@ fn handle_derivation(
             let to_merge = context
                 .git
                 .get_model()
-                .get_node_path(&progress.get_missing()[0].get_qualified_path())
-                .unwrap()
-                .try_convert_to::<ConcreteFeature>()
+                .get_node_path::<ConcreteFeature>(&progress.get_missing()[0].get_qualified_path())
                 .unwrap();
             context.info(format!(
                 "\nNow merging:\n\n   {}",
@@ -276,23 +274,7 @@ fn assert_features_exist(
     features: &Vec<QualifiedPath>,
     git: &GitInterface,
 ) -> Result<Vec<NodePath<ConcreteFeature>>, Box<dyn Error>> {
-    let mut paths: Vec<NodePath<ConcreteFeature>> = vec![];
-    for feature in features.iter() {
-        if let Some(path) = git.get_model().get_node_path(feature) {
-            if let Some(f) = path.try_convert_to::<ConcreteFeature>() {
-                paths.push(f);
-            } else {
-                return Err(format!("Path {} is not a feature", feature.to_string().red()).into());
-            }
-        } else {
-            return Err(format!(
-                "Feature {} does not exist in current working tree",
-                feature.to_string().red()
-            )
-            .into());
-        }
-    }
-    Ok(paths)
+    Ok(git.get_model().assert_all(features)?)
 }
 
 #[derive(Clone, Debug)]
@@ -332,9 +314,8 @@ impl CommandDefinition for DeriveCommand {
 impl CommandInterface for DeriveCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let current_area = context.git.get_current_area()?;
-        let current_path = context.git.get_current_node_path()?;
+        let current_path = context.git.get_current_node_path::<AnyHasBranch>()?.unwrap();
         let product_path = match current_path
-            .as_any_type()
             .try_convert_to::<ConcreteProduct>()
         {
             Some(path) => path,

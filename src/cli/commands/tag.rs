@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::model::QualifiedPath;
+use crate::model::{AnyHasBranch, QualifiedPath};
 use clap::{Arg, Command};
 use std::error::Error;
 
@@ -35,7 +35,7 @@ impl CommandInterface for TagCommand {
                 context.log_from_output(&output);
             }
             None => {
-                let current_branch = context.git.get_current_node_path()?;
+                let current_branch = context.git.get_current_node_path::<AnyHasBranch>()?.unwrap();
                 let tags = current_branch.get_tags();
                 if tags.is_empty() {
                     context.info("No tags on current branch");

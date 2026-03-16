@@ -2,14 +2,13 @@ use crate::cli::completion::CompletionHelper;
 use crate::cli::*;
 use crate::git::conflict::{ConflictChecker, ConflictStatistics};
 use crate::model::{
-    ByGlobFilteringNodePathTransformer, ChainingNodePathTransformer, ConcreteBranch,
+    ByGlobFilteringNodePathTransformer, ChainingNodePathTransformer, AnyHasBranch,
     ConcreteFeature, ConcreteProduct, FeatureMetadata, FilteringMode,
     HasBranchFilteringNodePathTransformer, NodePath, NodePathTransformer, NodePathTransformers,
     QualifiedPath, ToQualifiedPath,
 };
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
-use itertools::Itertools;
 use std::error::Error;
 
 const PATHS: &str = "paths";
@@ -19,7 +18,7 @@ const ONE_TO_N: &str = "one_to_n";
 const PERM_TO_BASE: &str = "perm_to_base";
 
 fn run_checks(
-    paths: &Vec<NodePath<ConcreteBranch>>,
+    paths: &Vec<NodePath<AnyHasBranch>>,
     permutations: Option<usize>,
     perm_to_base: Option<usize>,
     by_order: bool,
@@ -139,7 +138,7 @@ impl CommandInterface for CheckCommand {
             && !by_order
             && !one_to_n
         {
-            let current_path = context.git.get_current_node_path()?;
+            let current_path = context.git.get_current_node_path()?.unwrap();
             if current_path.try_convert_to::<ConcreteFeature>().is_some() {
                 let feature_root = context
                     .git
@@ -166,8 +165,8 @@ impl CommandInterface for CheckCommand {
                 let node_paths = context
                     .git
                     .get_model()
-                    .assert_all::<ConcreteBranch>(&features)?;
-                let mut final_paths: Vec<NodePath<ConcreteBranch>> =
+                    .assert_all::<AnyHasBranch>(&features)?;
+                let mut final_paths: Vec<NodePath<AnyHasBranch>> =
                     vec![product.try_convert_to().unwrap()];
                 final_paths.extend(node_paths);
                 run_checks(&final_paths, None, Some(1), false, false, &checker)?
@@ -182,7 +181,7 @@ impl CommandInterface for CheckCommand {
                 .iter()
                 .map(|path| current_path.clone() + path.clone())
                 .collect();
-            let mut final_paths: Vec<NodePath<ConcreteBranch>> = Vec::new();
+            let mut final_paths: Vec<NodePath<AnyHasBranch>> = Vec::new();
             for path in transformed_paths.iter() {
                 let s = path.to_string();
                 if s.contains("*") || s.contains("[") || s.contains("]") {
@@ -197,9 +196,9 @@ impl CommandInterface for CheckCommand {
                     ]);
                     let root = context.git.get_model().get_virtual_root();
                     let iterator = root.iter_children_req();
-                    let found: Vec<NodePath<ConcreteBranch>> = node_finder
+                    let found: Vec<NodePath<AnyHasBranch>> = node_finder
                         .transform(iterator)
-                        .map(|path| path.try_convert_to::<ConcreteBranch>().unwrap())
+                        .map(|path| path.try_convert_to::<AnyHasBranch>().unwrap())
                         .collect();
                     final_paths.extend(found);
                 } else {

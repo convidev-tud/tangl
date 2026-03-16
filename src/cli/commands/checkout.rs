@@ -1,6 +1,6 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::model::{ConcreteBranch, NodeError, QualifiedPath, ToQualifiedPath};
+use crate::model::{AnyHasBranch, ModelError, QualifiedPath, ToQualifiedPath};
 use crate::util::u8_to_string;
 use clap::{Arg, Command};
 use colored::Colorize;
@@ -26,17 +26,17 @@ impl CommandInterface for CheckoutCommand {
         let node_path = match context
             .git
             .get_model()
-            .assert_path::<ConcreteBranch>(&full_target)
+            .assert_path::<AnyHasBranch>(&full_target)
         {
             Ok(node_path) => node_path,
             Err(error) => {
                 return match error {
-                    NodeError::NodeNotFound(_) => Err(format!(
+                    ModelError::PathNotFound(_) => Err(format!(
                         "Cannot checkout {}: path does not exist",
                         full_target.to_string()
                     )
                     .into()),
-                    NodeError::WrongNodeType(_) => Err(format!(
+                    ModelError::WrongNodeType(_) => Err(format!(
                         "Cannot checkout {}: target does not support branches",
                         full_target
                     )

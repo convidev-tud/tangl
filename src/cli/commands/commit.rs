@@ -1,6 +1,6 @@
 use crate::cli::*;
 use crate::git::conflict::{ConflictChecker, ConflictStatistics};
-use crate::model::{ConcreteBranch, ConcreteFeature, ConcreteProduct, FeatureMetadata, NodePath, ToQualifiedPath};
+use crate::model::{AnyHasBranch, ConcreteFeature, ConcreteProduct, FeatureMetadata, NodePath, ToQualifiedPath};
 use clap::{Arg, Command};
 use colored::Colorize;
 use std::error::Error;
@@ -26,7 +26,7 @@ impl CommandDefinition for CommitCommand {
 impl CommandInterface for CommitCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let maybe_message = context.arg_helper.get_argument_value::<String>(MESSAGE);
-        let current = context.git.get_current_node_path()?;
+        let current = context.git.get_current_node_path::<AnyHasBranch>()?.unwrap();
         context.git.colored_output(true);
         let out = match maybe_message {
             Some(message) => context.git.commit(&message)?,
@@ -35,20 +35,20 @@ impl CommandInterface for CommitCommand {
         context.log_from_output(&out);
         if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
             let checker = ConflictChecker::new(&context.git);
-            let n = feature.try_convert_to::<ConcreteBranch>().unwrap();
+            let n = feature.try_convert_to::<AnyHasBranch>().unwrap();
             let area = context.git.get_current_area()?;
-            let all_features: Vec<NodePath<ConcreteBranch>> = area
+            let all_features: Vec<NodePath<AnyHasBranch>> = area
                 .clone()
                 .move_to_feature_root()
                 .unwrap()
                 .iter_features_req()
                 .filter_map(|feature| {
                     if feature != n {
-                        feature.try_convert_to::<ConcreteBranch>()
+                        feature.try_convert_to::<AnyHasBranch>()
                     } else { None }
                 })
                 .collect();
-            let all_products: Vec<NodePath<ConcreteBranch>> = if let Some(pr) = area.move_to_product_root() {
+            let all_products: Vec<NodePath<AnyHasBranch>> = if let Some(pr) = area.move_to_product_root() {
                 pr
                     .iter_products_req()
                     .filter_map(|p| {
@@ -60,7 +60,7 @@ impl CommandInterface for CommitCommand {
                                 let last = derivation_commits.first().unwrap();
                                 let features = FeatureMetadata::qualified_paths(last.get_metadata().get_total());
                                 if features.contains(&feature.to_qualified_path()) {
-                                    concrete.try_convert_to::<ConcreteBranch>()
+                                    concrete.try_convert_to::<AnyHasBranch>()
                                 } else { None }
                             }
                         } else {

@@ -84,8 +84,7 @@ impl CommandInterface for UntieCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let product = if let Some(path) = context
             .git
-            .get_current_node_path()?
-            .try_convert_to::<ConcreteProduct>()
+            .get_current_node_path::<ConcreteProduct>()?
         {
             path
         } else {
@@ -138,7 +137,7 @@ impl CommandInterface for UntieCommand {
                 }
             },
         };
-        let current_path = context.git.get_current_node_path()?;
+        let current_path = context.git.get_current_node_path::<AnyHasBranch>()?.unwrap();
         context.git.checkout(&feature)?;
         let output = context.git.cherry_pick(&target_commit_hash)?;
         if !output.status.success() {

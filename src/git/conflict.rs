@@ -1,7 +1,7 @@
 use crate::cli::CommandContext;
 use crate::git::error::GitError;
 use crate::git::interface::GitInterface;
-use crate::model::{ConcreteBranch, GitCommit, NodePath, QualifiedPath, ToQualifiedPath};
+use crate::model::{AnyHasBranch, NodePath, QualifiedPath, ToQualifiedPath};
 use colored::Colorize;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -189,7 +189,7 @@ impl<'a> ConflictChecker<'a> {
 
     pub fn check_k_permutations(
         &self,
-        paths: &Vec<NodePath<ConcreteBranch>>,
+        paths: &Vec<NodePath<AnyHasBranch>>,
         k: usize,
     ) -> impl Iterator<Item = ConflictStatistic> {
         let iterator = paths
@@ -201,12 +201,12 @@ impl<'a> ConflictChecker<'a> {
 
     pub fn check_permutations_against_base(
         &self,
-        targets: &Vec<NodePath<ConcreteBranch>>,
-        base: &NodePath<ConcreteBranch>,
+        targets: &Vec<NodePath<AnyHasBranch>>,
+        base: &NodePath<AnyHasBranch>,
         k: usize,
     ) -> impl Iterator<Item = ConflictStatistic> {
         let iterator = targets.iter().permutations(k).map(|target| {
-            let mut to_check: Vec<&NodePath<ConcreteBranch>> = vec![];
+            let mut to_check: Vec<&NodePath<AnyHasBranch>> = vec![];
             to_check.push(base);
             to_check.extend(target);
             self.check_chain_and_build_statistic(&to_check)
@@ -214,15 +214,15 @@ impl<'a> ConflictChecker<'a> {
         iterator
     }
 
-    pub fn check_by_order(&self, paths: &Vec<NodePath<ConcreteBranch>>) -> ConflictStatistic {
-        let chain: Vec<&NodePath<ConcreteBranch>> = paths.iter().collect();
+    pub fn check_by_order(&self, paths: &Vec<NodePath<AnyHasBranch>>) -> ConflictStatistic {
+        let chain: Vec<&NodePath<AnyHasBranch>> = paths.iter().collect();
         self.check_chain_and_build_statistic(&chain)
     }
 
     pub fn check_n_against_permutations(
         &self,
-        n: &'a Vec<NodePath<ConcreteBranch>>,
-        against: &'a Vec<NodePath<ConcreteBranch>>,
+        n: &'a Vec<NodePath<AnyHasBranch>>,
+        against: &'a Vec<NodePath<AnyHasBranch>>,
         k: &'a usize,
     ) -> impl Iterator<Item = ConflictStatistic> {
         // I don't know why, but k has to be borrowed here
@@ -256,14 +256,14 @@ impl<'a> ConflictChecker<'a> {
 
     fn check_chain(
         &self,
-        chain: &Vec<&NodePath<ConcreteBranch>>,
+        chain: &Vec<&NodePath<AnyHasBranch>>,
     ) -> Result<(Option<usize>, Vec<usize>), GitError> {
         if chain.len() < 2 {
             panic!("Chain has to contain at least 2 paths")
         }
         let mut failed_at: Option<usize> = None;
         let mut tested: Vec<usize> = vec![];
-        let current_path = self.interface.get_current_node_path()?;
+        let current_path = self.interface.get_current_node_path::<AnyHasBranch>()?.unwrap();
         let base = chain[0];
         self.interface.checkout(base)?;
         let temporary = QualifiedPath::from("tmp");
@@ -285,7 +285,7 @@ impl<'a> ConflictChecker<'a> {
 
     fn build_statistic(
         &self,
-        paths: &Vec<&NodePath<ConcreteBranch>>,
+        paths: &Vec<&NodePath<AnyHasBranch>>,
         result: Result<(Option<usize>, Vec<usize>), GitError>,
     ) -> ConflictStatistic {
         let dereferenced = paths.into_iter().map(|p| p.to_qualified_path()).collect();
@@ -309,7 +309,7 @@ impl<'a> ConflictChecker<'a> {
 
     fn check_chain_and_build_statistic(
         &self,
-        chain: &Vec<&NodePath<ConcreteBranch>>,
+        chain: &Vec<&NodePath<AnyHasBranch>>,
     ) -> ConflictStatistic {
         let result = self.check_chain(chain);
         self.build_statistic(chain, result)
@@ -462,8 +462,8 @@ impl<'a> ConflictAnalyzer<'a> {
 
     pub fn calculate_2d_heuristics_matrix_with_merge_base(
         &mut self,
-        paths: &Vec<NodePath<ConcreteBranch>>,
-        base: &NodePath<ConcreteBranch>,
+        paths: &Vec<NodePath<AnyHasBranch>>,
+        base: &NodePath<AnyHasBranch>,
     ) -> Result<Conflict2DMatrix, GitError> {
         let mut all = vec![base];
         all.extend(paths);
@@ -482,12 +482,12 @@ impl<'a> ConflictAnalyzer<'a> {
                 _ => {}
             }
         }
-        let to_test_with_base: Vec<NodePath<ConcreteBranch>> = paths
+        let to_test_with_base: Vec<NodePath<AnyHasBranch>> = paths
             .iter()
             .filter(|path| !conflicting_with_base.contains(&path.to_qualified_path()))
             .cloned()
             .collect();
-        let _to_test_without_base: Vec<NodePath<ConcreteBranch>> = paths
+        let _to_test_without_base: Vec<NodePath<AnyHasBranch>> = paths
             .iter()
             .filter(|path| conflicting_with_base.contains(&path.to_qualified_path()))
             .cloned()

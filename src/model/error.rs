@@ -18,42 +18,42 @@ impl Display for WrongNodeTypeError {
 impl Error for WrongNodeTypeError {}
 
 #[derive(Debug, Clone)]
-pub struct NodeNotFoundError {
+pub struct PathNotFoundError {
     msg: String,
 }
-impl NodeNotFoundError {
+impl PathNotFoundError {
     pub fn new<S: Into<String>>(msg: S) -> Self {
         Self { msg: msg.into() }
     }
 }
-impl Display for NodeNotFoundError {
+impl Display for PathNotFoundError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.msg)
     }
 }
-impl Error for NodeNotFoundError {}
+impl Error for PathNotFoundError {}
 
 #[derive(Debug, Clone)]
-pub enum NodeError {
+pub enum ModelError {
     WrongNodeType(WrongNodeTypeError),
-    NodeNotFound(NodeNotFoundError),
+    PathNotFound(PathNotFoundError),
 }
-impl Display for NodeError {
+impl Display for ModelError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            NodeError::WrongNodeType(err) => err.fmt(f),
-            NodeError::NodeNotFound(err) => err.fmt(f),
+            ModelError::WrongNodeType(err) => err.fmt(f),
+            ModelError::PathNotFound(err) => err.fmt(f),
         }
     }
 }
-impl Error for NodeError {}
-impl From<WrongNodeTypeError> for NodeError {
+impl Error for ModelError {}
+impl From<WrongNodeTypeError> for ModelError {
     fn from(err: WrongNodeTypeError) -> Self {
-        NodeError::WrongNodeType(err)
+        ModelError::WrongNodeType(err)
     }
 }
-impl From<NodeNotFoundError> for NodeError {
-    fn from(err: NodeNotFoundError) -> Self {
-        NodeError::NodeNotFound(err)
+impl From<PathNotFoundError> for ModelError {
+    fn from(err: PathNotFoundError) -> Self {
+        ModelError::PathNotFound(err)
     }
 }

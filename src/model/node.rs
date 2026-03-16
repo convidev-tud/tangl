@@ -83,42 +83,42 @@ impl Node {
         name: S,
         metadata: &NodeMetadata,
         is_tag: bool,
-    ) -> Result<NodeType, WrongNodeTypeError> {
+    ) -> NodeType {
         let real_name = name.into();
         let new_type = if is_tag {
             NodeType::Tag
         } else {
             self.node_type
-                .decide_next_type(real_name.as_str(), metadata)?
+                .decide_next_type(real_name.as_str(), metadata)
         };
-        Ok(new_type)
+        new_type
     }
     fn add_child<S: Into<String>>(
         &mut self,
         name: S,
         metadata: NodeMetadata,
         is_tag: bool,
-    ) -> Result<NodeType, WrongNodeTypeError> {
+    ) -> NodeType {
         let real_name = name.into();
-        let new_type = self.decide_child_type(real_name.clone(), &metadata, is_tag)?;
+        let new_type = self.decide_child_type(real_name.clone(), &metadata, is_tag);
         self.children.insert(
             real_name.clone(),
             Rc::new(Node::new(real_name, new_type.clone(), metadata)),
         );
-        Ok(new_type)
+        new_type
     }
     fn update_child<S: Into<String>>(
         &mut self,
         name: S,
         metadata: NodeMetadata,
         is_tag: bool,
-    ) -> Result<NodeType, WrongNodeTypeError> {
+    ) -> NodeType {
         let real_name = name.into();
-        let new_type = self.decide_child_type(real_name.clone(), &metadata, is_tag)?;
+        let new_type = self.decide_child_type(real_name.clone(), &metadata, is_tag);
         let child = self.get_child_mut(real_name).unwrap();
         child.update_metadata(metadata);
         child.update_type(new_type.clone());
-        Ok(new_type)
+        new_type
     }
     fn get_child_mut<S: Into<String>>(&mut self, name: S) -> Option<&mut Node> {
         let real_name = name.into();
@@ -155,26 +155,26 @@ impl Node {
         path: &QualifiedPath,
         metadata: NodeMetadata,
         is_tag: bool,
-    ) -> Result<NodeType, WrongNodeTypeError> {
+    ) -> NodeType {
         let name = path.get(0).unwrap().to_string();
         match path.len() {
-            0 => Ok(self.node_type.clone()),
+            0 => self.node_type.clone(),
             1 => {
                 let new_type = match self.get_child_mut(&name) {
                     Some(_) => {
-                        self.update_child(name, metadata, is_tag)?
+                        self.update_child(name, metadata, is_tag)
                     }
                     None => {
-                        self.add_child(name.clone(), metadata, is_tag)?
+                        self.add_child(name.clone(), metadata, is_tag)
                     }
                 };
-                Ok(new_type)
+                new_type
             }
             _ => {
                 let next_child = match self.get_child_mut(&name) {
                     Some(node) => node,
                     None => {
-                        self.add_child(name.clone(), NodeMetadata::default(), false)?;
+                        self.add_child(name.clone(), NodeMetadata::default(), false);
                         self.get_child_mut(&name).unwrap()
                     }
                 };
@@ -232,14 +232,12 @@ mod tests {
             &QualifiedPath::from("foo/f1"),
             NodeMetadata::default(),
             false,
-        )
-        .unwrap();
+        );
         node.insert_node_path(
             &QualifiedPath::from("bar/b1"),
             NodeMetadata::default(),
             false,
-        )
-        .unwrap();
+        );
         node
     }
 

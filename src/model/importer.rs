@@ -43,7 +43,7 @@ impl ModelImporter {
         let paths = self.parser.parse(&data);
         let mut model = TreeDataModel::new();
         for path in paths {
-            model.insert_qualified_path(path, false)?;
+            model.insert_qualified_path(path, false);
         }
         Ok(model)
     }

@@ -6,7 +6,7 @@ use colored::Colorize;
 use std::error::Error;
 
 fn add_feature(feature: QualifiedPath, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
-    let node_path = context.git.get_current_node_path()?;
+    let node_path = context.git.get_current_node_path::<AnyHasBranch>()?.unwrap();
     let current_path = if let Some(path) = node_path.try_convert_to::<ConcreteFeature>() {
         path.to_qualified_path()
     } else if let Some(path) = node_path.as_any_type().try_convert_to::<ConcreteArea>() {
@@ -18,43 +18,13 @@ fn add_feature(feature: QualifiedPath, context: &mut CommandContext) -> Result<(
     };
     drop(node_path);
     let target_path = current_path + feature;
-    let output = context.git.create_branch(&target_path)?;
-    context.log_from_output(&output);
+    let result = context.git.create_branch::<ConcreteProduct>(&target_path)?;
     context.info(format!(
-        "Created new feature {}",
-        target_path.strip_n_left(2)
+        "Created new {} {}",
+        NodeType::ConcreteFeature.get_formatted_name(),
+        result.to_qualified_path().strip_n_left(3),
     ));
     Ok(())
-}
-fn delete_feature(
-    feature: QualifiedPath,
-    context: &mut CommandContext,
-) -> Result<(), Box<dyn Error>> {
-    let area = context.git.get_current_area()?;
-    let complete_path = area.get_path_to_feature_root() + feature;
-    let node_path = context.git.get_model().get_node_path(&complete_path);
-    if let Some(path) = node_path {
-        if let Some(feature) = path.as_any_type().try_convert_to::<ConcreteFeature>() {
-            let output = context.git.delete_branch(feature)?;
-            if output.status.success() {
-                context.info(format!(
-                    "Deleted feature {}",
-                    complete_path.to_string().blue()
-                ))
-            } else {
-                context.log_from_output(&output);
-            }
-            Ok(())
-        } else {
-            Err(format!("Path {} is not a feature", path.to_string().red()).into())
-        }
-    } else {
-        Err(format!(
-            "Cannot delete feature {}: does not exist",
-            complete_path.to_string().red()
-        )
-        .into())
-    }
 }
 fn print_feature_tree(context: &mut CommandContext, show_tags: bool) -> Result<(), Box<dyn Error>> {
     let area = context.git.get_current_area()?;
@@ -89,7 +59,12 @@ impl CommandInterface for FeatureCommand {
             .unwrap();
         match maybe_delete {
             Some(delete) => {
-                delete_feature(QualifiedPath::from(delete), context)?;
+                let to_delete = if let Some(current) = context.git.get_current_node_path::<ConcreteFeature>()? {
+                    current.to_qualified_path() + delete.to_qualified_path()
+                } else {
+                    context.git.get_current_area()?.get_path_to_feature_root() + delete.to_qualified_path()
+                };
+                delete_path::<ConcreteFeature>(&to_delete, context)?;
                 return Ok(());
             }
             None => {}
@@ -109,21 +84,24 @@ impl CommandInterface for FeatureCommand {
         completion_helper: CompletionHelper,
         context: &mut CommandContext,
     ) -> Result<Vec<String>, Box<dyn Error>> {
+        let maybe_feature_root = context.git.get_current_area()?.move_to_feature_root();
+        if maybe_feature_root.is_none() { return Ok(vec![]); }
+        let feature_root = maybe_feature_root.unwrap();
         let result = match completion_helper.currently_editing() {
             Some(arg) => match arg.get_id().as_str() {
                 "delete" => {
-                    let maybe_feature_root = context.git.get_current_area()?.move_to_feature_root();
-                    match maybe_feature_root {
-                        Some(path) => completion_helper.complete_qualified_paths(
-                            path.to_qualified_path(),
-                            HasBranchFilteringNodePathTransformer::new(true)
-                                .transform(path.iter_children_req())
-                                .map(|path| path.to_qualified_path()),
-                        ),
-                        None => {
-                            vec![]
-                        }
-                    }
+                    let current = context.git.get_current_node_path::<AnyHasBranch>()?.unwrap();
+                    let reference = if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
+                        feature.to_qualified_path()
+                    } else {
+                        feature_root.to_qualified_path()
+                    };
+                    completion_helper.complete_qualified_paths(
+                        reference,
+                        HasBranchFilteringNodePathTransformer::new(true)
+                            .transform(feature_root.iter_children_req())
+                            .map(|path| path.to_qualified_path()),
+                    )   
                 }
                 _ => {
                     vec![]
