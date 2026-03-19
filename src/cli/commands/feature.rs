@@ -18,7 +18,7 @@ fn add_feature(feature: QualifiedPath, context: &mut CommandContext) -> Result<(
     };
     drop(node_path);
     let target_path = current_path + feature;
-    let result = context.git.create_branch::<ConcreteProduct>(&target_path)?;
+    let result = context.git.create_branch::<ConcreteFeature>(&target_path)?;
     context.info(format!(
         "Created new {} {}",
         NodeType::ConcreteFeature.get_formatted_name(),
