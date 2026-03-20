@@ -6,10 +6,14 @@ use crate::model::*;
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
 use std::error::Error;
+use serde_json::to_string;
+use crate::git::error::GitError;
+use crate::spl::{DerivationData, DerivationError, DerivationManager};
 
 const FEATURES: &str = "features";
 const CONTINUE: &str = "continue";
 const ABORT: &str = "abort";
+const RESET: &str = "reset";
 const OPTIMIZATION: &str = "optimization";
 
 fn approximate_merge_order(
@@ -270,11 +274,37 @@ fn handle_derivation(
     Ok(())
 }
 
-fn assert_features_exist(
-    features: &Vec<QualifiedPath>,
-    git: &GitInterface,
-) -> Result<Vec<NodePath<ConcreteFeature>>, Box<dyn Error>> {
-    Ok(git.get_model().assert_all(features)?)
+fn handle_initialize(features: Vec<NodePath<ConcreteFeature>>, derivation_manager: &mut DerivationManager) -> Result<(), Box<dyn Error>> {
+    let state = match derivation_manager.initialize_derivation(&features) {
+        Ok(state) => state,
+        Err(error) => match error {
+            DerivationError::DerivationInProgress => {
+                let messages = vec![
+                    "A derivation is already in progress".to_string(),
+                    format!("  (Use {} to continue the derivation)", format_command_help("tangl derive --continue")),
+                    format!("  (Use {} to reset to the last state)", format_command_help("tangl derive --reset")),
+                    format!("  (Use {} to abort the derivation)", format_command_help("tangl derive --abort")),
+                ];
+                return Err(messages.join("\n").into())
+            },
+            _ => unreachable!(),
+        },
+    };
+    Ok(())
+}
+
+fn handle_continue2(derivation_manager: &mut DerivationManager) -> Result<(), Box<dyn Error>> {
+    let current = derivation_manager.get_current_state();
+    let next = match derivation_manager.continue_derivation() {
+        Ok(state) => state,
+        Err(error) => match error {
+            DerivationError::NoDerivationInProgress => {
+                return Err("No derivation in progress, there is nothing to continue".into())
+            },
+            _ => unreachable!(),
+        },
+    };
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -291,6 +321,7 @@ impl CommandDefinition for DeriveCommand {
                 Arg::new(CONTINUE)
                     .long("continue")
                     .action(ArgAction::SetTrue)
+                    .conflicts_with(FEATURES)
                     .help("Continue the ongoing derivation process"),
             )
             .arg(
@@ -299,6 +330,12 @@ impl CommandDefinition for DeriveCommand {
                     .action(ArgAction::SetTrue)
                     .exclusive(true)
                     .help("Abort the ongoing derivation process"),
+            )
+            .arg(
+                Arg::new(RESET)
+                    .long(RESET)
+                    .exclusive(true)
+                    .help("Reset the ongoing derivation process to the last state"),
             )
             .arg(
                 Arg::new(OPTIMIZATION)
@@ -314,18 +351,7 @@ impl CommandDefinition for DeriveCommand {
 impl CommandInterface for DeriveCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let current_area = context.git.get_current_area()?;
-        let current_path = context.git.assert_current_node_path::<AnyHasBranch>()?;
-        let product_path = match current_path.try_convert_to::<ConcreteProduct>() {
-            Some(path) => path,
-            _ => {
-                return Err(format!(
-                    "Current branch is not a product. You can create one with the {} command and/or {} one.",
-                    format_command_help("product"),
-                    format_command_help("checkout"),
-                )
-                .into());
-            }
-        };
+        let product_path = context.git.assert_current_node_path::<ConcreteProduct>()?;
         let all_feature_paths = context
             .arg_helper
             .get_argument_values::<String>(FEATURES)
@@ -347,9 +373,20 @@ impl CommandInterface for DeriveCommand {
             .get_argument_value::<bool>(OPTIMIZATION)
             .unwrap();
 
+        let features = context.git.get_model().assert_all(&all_feature_paths)?;
+        let mut derivation_manager = DerivationManager::new(&product_path, &context.git)?;
+        
+        if !features.is_empty() {
+            handle_initialize(features, &mut derivation_manager)?;
+        } else if continue_derivation {
+            todo!()
+        } else {
+            unreachable!()
+        };
+        
+
         let commits = context.git.iter_commit_history(&product_path)?;
         let last_state = commits.get(0);
-        let features = assert_features_exist(&all_feature_paths, &context.git)?;
 
         if handle_abort(last_state.clone(), abort_derivation, context)? {
             return Ok(());

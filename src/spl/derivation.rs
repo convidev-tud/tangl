@@ -1,6 +1,11 @@
-use crate::model::{CommitMetadata, ConcreteFeature, NodePath, QualifiedPath, ToQualifiedPath};
+use crate::git::interface::GitInterface;
+use crate::model::*;
+use crate::spl::InspectionManager;
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::io;
+use std::process::Output;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,7 +67,7 @@ pub struct DerivationData {
     total: Vec<FeatureMetadata>,
 }
 impl DerivationData {
-    fn new<S: Into<String>>(
+    pub fn new<S: Into<String>>(
         features: Vec<FeatureMetadata>,
         initial_commit: S,
         previously_finished: Option<&Self>,
@@ -112,16 +117,14 @@ impl DerivationData {
     pub fn as_in_progress(&mut self) {
         self.state = DerivationState::InProgress.to_string();
     }
-    pub fn mark_as_completed(&mut self, features: &Vec<QualifiedPath>) {
-        for feature in features {
-            let old_missing: Vec<FeatureMetadata> = self.missing.clone();
-            let missing = old_missing
-                .iter()
-                .find(|m| m.get_qualified_path() == *feature);
-            if missing.is_some() {
-                self.missing.retain(|m| m.get_qualified_path() != *feature);
-                self.completed.push(missing.unwrap().clone())
-            }
+    pub fn mark_as_completed(&mut self, feature: &QualifiedPath) {
+        let old_missing: Vec<FeatureMetadata> = self.missing.clone();
+        let missing = old_missing
+            .iter()
+            .find(|m| m.get_qualified_path() == *feature);
+        if missing.is_some() {
+            self.missing.retain(|m| m.get_qualified_path() != *feature);
+            self.completed.push(missing.unwrap().clone())
         }
     }
     pub fn reorder_missing(&mut self, new_order: &Vec<QualifiedPath>) {
@@ -195,5 +198,129 @@ impl DerivationMetadata {
     }
     pub fn get_data(&self) -> &Option<DerivationData> {
         &self.data
+    }
+}
+
+#[derive(Debug)]
+pub enum DerivationError {
+    Io(io::Error),
+    Model(ModelError),
+    DerivationInProgress,
+    NoDerivationInProgress,
+}
+
+impl From<ModelError> for DerivationError {
+    fn from(value: ModelError) -> Self {
+        Self::Model(value)
+    }
+}
+
+impl From<io::Error> for DerivationError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl Display for DerivationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(err) => err.fmt(f),
+            Self::Model(err) => err.fmt(f),
+            Self::DerivationInProgress => f.write_str("fatal: a derivation is currently in progress"),
+            Self::NoDerivationInProgress => f.write_str("fatal: no derivation in progress"),
+        }
+    }
+}
+
+impl Error for DerivationError {}
+
+pub struct DerivationManager<'a> {
+    product: &'a NodePath<ConcreteProduct>,
+    current_state: DerivationData,
+    git: &'a GitInterface,
+}
+
+impl<'a> DerivationManager<'a> {
+    pub fn new(
+        product: &'a NodePath<ConcreteProduct>,
+        git: &'a GitInterface,
+    ) -> Result<Self, Box<dyn Error>> {
+        let inspector = InspectionManager::new(git);
+        let current_state = inspector.get_current_derivation_state(&product)?;
+        Ok(Self { product, current_state, git })
+    }
+
+    fn derivation_commit<S: Into<String>>(
+        &self,
+        message: S,
+        metadata: &DerivationMetadata,
+    ) -> Result<Output, io::Error> {
+        let real_message = message.into();
+        let metadata_json = metadata.to_commit_message()?;
+        let total = format!("{real_message}\n\n{metadata_json}");
+        self.git.commit(&total)
+    }
+
+    fn run_derivation_until_conflict(&mut self) -> Result<(), DerivationError> {
+        let feature_paths = FeatureMetadata::qualified_paths(&self.current_state.missing);
+        let features = self
+            .git
+            .get_model()
+            .assert_all::<ConcreteFeature>(&feature_paths)?;
+        let mut new_state = self.current_state.clone();
+        for feature in features {
+            let out = self.git.merge(&feature)?;
+            if out.status.success() {
+                new_state.mark_as_completed(&feature.to_qualified_path());
+            } else {
+                self.git.abort_merge()?;
+                break;
+            }
+        }
+        self.current_state = new_state;
+        Ok(())
+    }
+    
+    pub fn get_current_state(&self) -> DerivationData {
+        self.current_state.clone()
+    }
+
+    pub fn initialize_derivation(
+        &mut self,
+        features: &Vec<NodePath<ConcreteFeature>>,
+    ) -> Result<DerivationData, DerivationError> {
+        match self.current_state.get_state() {
+            DerivationState::None => {
+                let feature_metadata = FeatureMetadata::from_features(&features);
+                let current_commit = self.git.get_last_commit(&self.product)?;
+                let new_data = DerivationData::new(
+                    feature_metadata,
+                    current_commit.get_hash(),
+                    Some(&self.current_state),
+                );
+                let payload = DerivationMetadata::new::<String>(None, Some(new_data.clone()));
+                self.derivation_commit("Derivation start", &payload)?;
+                self.current_state = new_data;
+                Ok(self.current_state.clone())
+            }
+            DerivationState::InProgress => Err(DerivationError::DerivationInProgress),
+        }
+    }
+
+    pub fn continue_derivation(&mut self) -> Result<DerivationData, DerivationError> {
+        match self.current_state.get_state() {
+            DerivationState::InProgress => {
+                self.run_derivation_until_conflict()?;
+                let metadata =
+                    DerivationMetadata::new::<String>(None, Some(self.current_state.clone()));
+                let message = match self.current_state.get_state() {
+                    DerivationState::InProgress => "Derivation progress",
+                    DerivationState::None => "Derivation finished",
+                };
+                self.derivation_commit(message, &metadata)?;
+                Ok(self.current_state.clone())
+            }
+            DerivationState::None => Err(DerivationError::NoDerivationInProgress),
+        }
     }
 }

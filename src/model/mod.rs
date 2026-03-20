@@ -1,5 +1,3 @@
-mod commit;
-mod derivation;
 mod error;
 mod importer;
 mod node;
@@ -9,8 +7,7 @@ mod qualified_path;
 mod transformer;
 mod tree;
 
-pub use commit::*;
-pub use derivation::*;
+pub use crate::git::commit::*;
 pub use error::*;
 pub use importer::*;
 pub use node::*;

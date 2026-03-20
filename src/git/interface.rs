@@ -5,31 +5,6 @@ use std::io;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-pub struct CommitIterator<'a> {
-    hashes: Vec<String>,
-    git: &'a GitInterface,
-    current_position: usize,
-}
-
-impl<'a> CommitIterator<'a> {
-    pub fn new(hashes: Vec<String>, git: &'a GitInterface) -> Self {
-        Self { hashes, git, current_position: 0 }
-    }
-}
-
-impl<'a> Iterator for CommitIterator<'a> {
-    type Item = Result<Commit, io::Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_position < self.hashes.len() {
-            let hash = self.hashes.get(self.current_position).unwrap();
-            let commit = self.git.get_commit(hash);
-            self.current_position += 1;
-            Some(commit)
-        } else { None }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum GitPath {
     CurrentDirectory,
@@ -152,7 +127,7 @@ impl GitInterface {
             Ok(path) => Ok(path),
             Err(error) => match error {
                 ModelError::WrongNodeType(_) => {
-                    let message = format!("Current branch is not of type '{}'", T::identifier(),);
+                    let message = format!("fatal: current branch is not of type '{}'", T::identifier(),);
                     Err(ModelError::WrongNodeType(WrongNodeTypeError::new(message)).into())
                 }
                 _ => unreachable!(),
@@ -222,13 +197,13 @@ impl GitInterface {
     pub fn delete_branch<T: HasBranch>(&mut self, path: NodePath<T>) -> Result<(), GitError> {
         self.delete_branch_no_mut(&path.to_qualified_path())
     }
-    pub fn merge<T: HasBranch>(&self, path: &NodePath<T>) -> Result<Output, GitError> {
+    pub fn merge<T: HasBranch>(&self, path: &NodePath<T>) -> Result<Output, io::Error> {
         Ok(self.raw_git_interface.run(vec![
             "merge",
             path.to_qualified_path().to_git_branch().as_str(),
         ])?)
     }
-    pub fn abort_merge(&self) -> Result<Output, GitError> {
+    pub fn abort_merge(&self) -> Result<Output, io::Error> {
         Ok(self.raw_git_interface.run(vec!["merge", "--abort"])?)
     }
     pub fn create_tag(&self, tag: &QualifiedPath) -> Result<Output, GitError> {
@@ -245,21 +220,33 @@ impl GitInterface {
             .raw_git_interface
             .run(vec!["tag", "-d", tagged.to_git_branch().as_str()])?)
     }
-    pub fn get_commit<S: Into<String>>(&self, hash: S) -> Result<Commit, io::Error> {
+    pub fn get_commit_from_hash<S: Into<String>>(
+        &self,
+        hash: S,
+    ) -> Result<Option<Commit>, io::Error> {
         let h = hash.into();
-        let out = self.raw_git_interface.run(vec!["log", "--format=%B", "-n 1", h.as_str()])?;
+        let out = self
+            .raw_git_interface
+            .run(vec!["log", "--format=%B", "-n 1", h.as_str()])?;
         let message = String::from_utf8(out.stdout).unwrap();
-        Ok(Commit::new(h, message))
+        if message.contains("fatal") {
+            Ok(None)
+        } else {
+            Ok(Some(Commit::new(h, message)))
+        }
     }
     pub fn iter_commit_history<T: HasBranch>(
         &self,
         branch: &NodePath<T>,
+        n: i32,
     ) -> Result<CommitIterator, io::Error> {
         let raw_hashes = u8_to_string(
             &self
                 .raw_git_interface
                 .run(vec![
                     "log",
+                    "n",
+                    n.to_string().as_str(),
                     "--format=%H",
                     branch.to_qualified_path().to_git_branch().as_str(),
                 ])?
@@ -272,6 +259,14 @@ impl GitInterface {
             .map(|line| line.to_string())
             .collect::<Vec<_>>();
         Ok(CommitIterator::new(all_hashes, &self))
+    }
+    pub fn get_last_commit<T: HasBranch>(&self, branch: &NodePath<T>) -> Result<Commit, io::Error> {
+        let iterator = self.iter_commit_history(&branch, 1)?;
+        let mut commits: Vec<Commit> = vec![];
+        for commit in iterator {
+            commits.push(commit?);
+        }
+        Ok(commits[0].clone())
     }
     pub fn get_files_managed_by_branch<T: HasBranch>(
         &self,
@@ -301,13 +296,20 @@ impl GitInterface {
             .map(|e| e.to_string())
             .collect())
     }
-    pub fn commit(&self, message: &str) -> Result<Output, GitError> {
-        Ok(self.raw_git_interface.run(vec!["commit", "-m", message])?)
-    }
-    pub fn empty_commit(&self, message: &str) -> Result<Output, GitError> {
+    pub fn commit<S: Into<String>>(&self, message: S) -> Result<Output, io::Error> {
+        let message_string = message.into();
         Ok(self
             .raw_git_interface
-            .run(vec!["commit", "--allow-empty", "-m", message])?)
+            .run(vec!["commit", "-m", message_string.as_str()])?)
+    }
+    pub fn empty_commit<S: Into<String>>(&self, message: S) -> Result<Output, io::Error> {
+        let message_string = message.into();
+        Ok(self.raw_git_interface.run(vec![
+            "commit",
+            "--allow-empty",
+            "-m",
+            message_string.as_str(),
+        ])?)
     }
     pub fn interactive_commit(&self) -> Result<Output, GitError> {
         Ok(self.raw_git_interface.run(vec!["commit"])?)
