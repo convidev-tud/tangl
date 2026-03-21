@@ -1,6 +1,6 @@
 use crate::cli::*;
-use crate::model::{AnyHasBranch, ConcreteProduct, DerivationState};
-use crate::util::u8_to_string;
+use crate::model::{AnyHasBranch, ConcreteProduct};
+use crate::spl::{DerivationState, InspectionManager};
 use clap::Command;
 use colored::Colorize;
 use std::error::Error;
@@ -20,7 +20,7 @@ impl CommandDefinition for StatusCommand {
 impl CommandInterface for StatusCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         context.git.colored_output(true);
-        let output = u8_to_string(&context.git.status()?.stdout);
+        let output = context.git.status()?;
         let mut no_first_line = output.split("\n").collect::<Vec<_>>()[1..]
             .to_vec()
             .join("\n")
@@ -35,59 +35,55 @@ impl CommandInterface for StatusCommand {
         context.info(first_line);
 
         if let Some(product) = current_path.try_convert_to::<ConcreteProduct>() {
-            let derivation_commits = context.git.get_derivation_commits(&product)?;
-            let maybe_last = derivation_commits.first();
-            if let Some(last) = maybe_last {
-                match last.try_get_metadata().get_state() {
-                    DerivationState::Finished => context.info("No derivation in progress"),
-                    _ => {
-                        context.info("\nDerivation in progress");
-                        if !last.try_get_metadata().get_completed().is_empty() {
-                            context.info("\nFeatures merged:");
-                            for feature in last.try_get_metadata().get_completed() {
-                                context.info(format!(
-                                    "    {}",
-                                    feature.get_qualified_path().to_string().green()
-                                ));
-                            }
-                        }
-                        if !last.try_get_metadata().get_missing().is_empty() {
-                            context.info("\nFeatures remaining:");
-                            for feature in last.try_get_metadata().get_missing() {
-                                context.info(format!(
-                                    "    {}",
-                                    feature.get_qualified_path().to_string().red()
-                                ));
-                            }
-                        }
-                        if no_first_line.contains("You have unmerged paths.") {
-                            context.info("\nCurrently merging:");
+            let inspector = InspectionManager::new(&context.git);
+            let state = inspector.get_current_derivation_state(&product)?;
+            match state.get_state() {
+                DerivationState::None => context.info("No derivation in progress"),
+                DerivationState::InProgress => {
+                    context.info("\nDerivation in progress");
+                    if !state.get_completed().is_empty() {
+                        context.info("\nFeatures merged:");
+                        for feature in state.get_completed() {
                             context.info(format!(
                                 "    {}",
-                                last.try_get_metadata()
-                                    .get_missing()
-                                    .first()
-                                    .unwrap()
-                                    .get_qualified_path()
-                                    .to_string()
-                                    .yellow()
+                                feature.get_qualified_path().to_string().green()
                             ));
-                            no_first_line += format!(
-                                "\nWhen all conflicts are fixed, run {} to continue the derivation.",
-                                format_command_help("tangl derive --continue")
-                            ).as_str();
-                        } else {
-                            no_first_line += format!(
-                                "\nRun {} to continue the derivation.",
-                                format_command_help("tangl derive --continue")
-                            )
-                            .as_str();
                         }
-                        context.info("");
                     }
+                    if !state.get_missing().is_empty() {
+                        context.info("\nFeatures remaining:");
+                        for feature in state.get_missing() {
+                            context.info(format!(
+                                "    {}",
+                                feature.get_qualified_path().to_string().red()
+                            ));
+                        }
+                    }
+                    if no_first_line.contains("You have unmerged paths.") {
+                        context.info("\nCurrently merging:");
+                        context.info(format!(
+                            "    {}",
+                            state
+                                .get_missing()
+                                .first()
+                                .unwrap()
+                                .get_qualified_path()
+                                .to_string()
+                                .yellow()
+                        ));
+                        no_first_line += format!(
+                            "\nWhen all conflicts are fixed, run {} to continue the derivation.",
+                            format_command_help("tangl derive --continue")
+                        ).as_str();
+                    } else {
+                        no_first_line += format!(
+                            "\nRun {} to continue the derivation.",
+                            format_command_help("tangl derive --continue")
+                        )
+                        .as_str();
+                    }
+                    context.info("");
                 }
-            } else {
-                context.info("No derivation in progress")
             }
         };
 

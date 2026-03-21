@@ -1,11 +1,11 @@
+use crate::git::conflict::MergeStatistic;
+use crate::git::error::{GitModelError, GitSerdeError};
 use crate::git::interface::GitInterface;
 use crate::model::*;
-use crate::spl::InspectionManager;
+use crate::spl::{ContinueDerivationError, InitializeDerivationError, InspectionManager};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::io;
-use std::process::Output;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -201,39 +201,6 @@ impl DerivationMetadata {
     }
 }
 
-#[derive(Debug)]
-pub enum DerivationError {
-    Io(io::Error),
-    Model(ModelError),
-    DerivationInProgress,
-    NoDerivationInProgress,
-}
-
-impl From<ModelError> for DerivationError {
-    fn from(value: ModelError) -> Self {
-        Self::Model(value)
-    }
-}
-
-impl From<io::Error> for DerivationError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl Display for DerivationError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(err) => err.fmt(f),
-            Self::Model(err) => err.fmt(f),
-            Self::DerivationInProgress => f.write_str("fatal: a derivation is currently in progress"),
-            Self::NoDerivationInProgress => f.write_str("fatal: no derivation in progress"),
-        }
-    }
-}
-
-impl Error for DerivationError {}
-
 pub struct DerivationManager<'a> {
     product: &'a NodePath<ConcreteProduct>,
     current_state: DerivationData,
@@ -247,21 +214,25 @@ impl<'a> DerivationManager<'a> {
     ) -> Result<Self, Box<dyn Error>> {
         let inspector = InspectionManager::new(git);
         let current_state = inspector.get_current_derivation_state(&product)?;
-        Ok(Self { product, current_state, git })
+        Ok(Self {
+            product,
+            current_state,
+            git,
+        })
     }
 
     fn derivation_commit<S: Into<String>>(
         &self,
         message: S,
         metadata: &DerivationMetadata,
-    ) -> Result<Output, io::Error> {
+    ) -> Result<String, GitSerdeError> {
         let real_message = message.into();
         let metadata_json = metadata.to_commit_message()?;
         let total = format!("{real_message}\n\n{metadata_json}");
-        self.git.commit(&total)
+        Ok(self.git.commit(&total)?)
     }
 
-    fn run_derivation_until_conflict(&mut self) -> Result<(), DerivationError> {
+    fn run_derivation_until_conflict(&mut self) -> Result<(), GitModelError> {
         let feature_paths = FeatureMetadata::qualified_paths(&self.current_state.missing);
         let features = self
             .git
@@ -269,18 +240,22 @@ impl<'a> DerivationManager<'a> {
             .assert_all::<ConcreteFeature>(&feature_paths)?;
         let mut new_state = self.current_state.clone();
         for feature in features {
-            let out = self.git.merge(&feature)?;
-            if out.status.success() {
-                new_state.mark_as_completed(&feature.to_qualified_path());
-            } else {
-                self.git.abort_merge()?;
-                break;
+            let (statistic, _) = self.git.merge(&feature)?;
+            match statistic {
+                MergeStatistic::Success(_) => {
+                    new_state.mark_as_completed(&feature.to_qualified_path())
+                }
+                MergeStatistic::Conflict(_) => {
+                    self.git.abort_merge()?;
+                    break;
+                }
+                _ => unreachable!(),
             }
         }
         self.current_state = new_state;
         Ok(())
     }
-    
+
     pub fn get_current_state(&self) -> DerivationData {
         self.current_state.clone()
     }
@@ -288,7 +263,7 @@ impl<'a> DerivationManager<'a> {
     pub fn initialize_derivation(
         &mut self,
         features: &Vec<NodePath<ConcreteFeature>>,
-    ) -> Result<DerivationData, DerivationError> {
+    ) -> Result<DerivationData, InitializeDerivationError> {
         match self.current_state.get_state() {
             DerivationState::None => {
                 let feature_metadata = FeatureMetadata::from_features(&features);
@@ -303,11 +278,11 @@ impl<'a> DerivationManager<'a> {
                 self.current_state = new_data;
                 Ok(self.current_state.clone())
             }
-            DerivationState::InProgress => Err(DerivationError::DerivationInProgress),
+            DerivationState::InProgress => Err(InitializeDerivationError::DerivationInProgress),
         }
     }
 
-    pub fn continue_derivation(&mut self) -> Result<DerivationData, DerivationError> {
+    pub fn continue_derivation(&mut self) -> Result<DerivationData, ContinueDerivationError> {
         match self.current_state.get_state() {
             DerivationState::InProgress => {
                 self.run_derivation_until_conflict()?;
@@ -320,7 +295,7 @@ impl<'a> DerivationManager<'a> {
                 self.derivation_commit(message, &metadata)?;
                 Ok(self.current_state.clone())
             }
-            DerivationState::None => Err(DerivationError::NoDerivationInProgress),
+            DerivationState::None => Err(ContinueDerivationError::NoDerivationInProgress),
         }
     }
 }

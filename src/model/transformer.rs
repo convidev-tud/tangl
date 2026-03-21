@@ -152,6 +152,22 @@ impl NodePathTransformer<AnyNode, AnyNode> for ByGlobFilteringNodePathTransforme
     }
 }
 
+pub struct ToTypeNodePathTransformer {}
+impl ToTypeNodePathTransformer {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+impl<T1, T2> NodePathTransformer<T1, T2> for ToTypeNodePathTransformer
+where
+    T1: SymbolicNodeType,
+    T2: SymbolicNodeType,
+{
+    fn apply(&self, node_path: NodePath<T1>) -> Option<NodePath<T2>> {
+        node_path.try_convert_to::<T2>()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

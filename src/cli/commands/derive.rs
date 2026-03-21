@@ -1,14 +1,14 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::git::conflict::{ConflictAnalyzer, ConflictChecker, ConflictStatistic};
+use crate::git::conflict::{ConflictAnalyzer, ConflictChecker, MergeStatistic};
+use crate::git::error::GitError;
 use crate::git::interface::GitInterface;
 use crate::model::*;
+use crate::spl::{ContinueDerivationError, DerivationData, DerivationManager, InitializeDerivationError};
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
-use std::error::Error;
 use serde_json::to_string;
-use crate::git::error::GitError;
-use crate::spl::{DerivationData, DerivationError, DerivationManager};
+use std::error::Error;
 
 const FEATURES: &str = "features";
 const CONTINUE: &str = "continue";
@@ -20,7 +20,7 @@ fn approximate_merge_order(
     features: &Vec<NodePath<ConcreteFeature>>,
     product: &NodePath<ConcreteProduct>,
     context: &CommandContext,
-) -> Result<ConflictStatistic, Box<dyn Error>> {
+) -> Result<MergeStatistic, Box<dyn Error>> {
     let checker = ConflictChecker::new(&context.git);
     let mut analyzer = ConflictAnalyzer::new(checker, context);
     let transformed: Vec<NodePath<AnyHasBranch>> = features
@@ -165,18 +165,18 @@ fn get_next_state(
             context.info(approximation.display_as_path());
 
             let new_order = match approximation {
-                ConflictStatistic::Success(success) => {
+                MergeStatistic::Success(success) => {
                     context.info("\nExpecting no conflicts");
                     success.paths
                 }
-                ConflictStatistic::Conflict(conflict) => {
+                MergeStatistic::Conflict(conflict) => {
                     context.info(format!(
                         "\nExpecting {} conflicts",
                         conflict.failed_at.len().to_string().red()
                     ));
                     conflict.paths
                 }
-                ConflictStatistic::Error(error) => return Err(error.error.into()),
+                MergeStatistic::Error(error) => return Err(error.error.into()),
             };
             if original_order_paths != new_order[1..].to_vec() {
                 state.reorder_missing(&new_order[1..].to_vec());
@@ -274,20 +274,32 @@ fn handle_derivation(
     Ok(())
 }
 
-fn handle_initialize(features: Vec<NodePath<ConcreteFeature>>, derivation_manager: &mut DerivationManager) -> Result<(), Box<dyn Error>> {
+fn handle_initialize(
+    features: Vec<NodePath<ConcreteFeature>>,
+    derivation_manager: &mut DerivationManager,
+) -> Result<(), Box<dyn Error>> {
     let state = match derivation_manager.initialize_derivation(&features) {
         Ok(state) => state,
-        Err(error) => match error {
-            DerivationError::DerivationInProgress => {
+        Err(error) => return match error {
+            InitializeDerivationError::DerivationInProgress => {
                 let messages = vec![
                     "A derivation is already in progress".to_string(),
-                    format!("  (Use {} to continue the derivation)", format_command_help("tangl derive --continue")),
-                    format!("  (Use {} to reset to the last state)", format_command_help("tangl derive --reset")),
-                    format!("  (Use {} to abort the derivation)", format_command_help("tangl derive --abort")),
+                    format!(
+                        "  (Use {} to continue the derivation)",
+                        format_command_help("tangl derive --continue")
+                    ),
+                    format!(
+                        "  (Use {} to reset to the last state)",
+                        format_command_help("tangl derive --reset")
+                    ),
+                    format!(
+                        "  (Use {} to abort the derivation)",
+                        format_command_help("tangl derive --abort")
+                    ),
                 ];
-                return Err(messages.join("\n").into())
-            },
-            _ => unreachable!(),
+                Err(messages.join("\n").into())
+            }
+            _ => Err(error.into()),
         },
     };
     Ok(())
@@ -297,11 +309,11 @@ fn handle_continue2(derivation_manager: &mut DerivationManager) -> Result<(), Bo
     let current = derivation_manager.get_current_state();
     let next = match derivation_manager.continue_derivation() {
         Ok(state) => state,
-        Err(error) => match error {
-            DerivationError::NoDerivationInProgress => {
-                return Err("No derivation in progress, there is nothing to continue".into())
-            },
-            _ => unreachable!(),
+        Err(error) => return match error {
+            ContinueDerivationError::NoDerivationInProgress => {
+                Err("No derivation in progress, there is nothing to continue".into())
+            }
+            _ => Err(error.into()),
         },
     };
     Ok(())
@@ -375,15 +387,14 @@ impl CommandInterface for DeriveCommand {
 
         let features = context.git.get_model().assert_all(&all_feature_paths)?;
         let mut derivation_manager = DerivationManager::new(&product_path, &context.git)?;
-        
+
         if !features.is_empty() {
             handle_initialize(features, &mut derivation_manager)?;
         } else if continue_derivation {
-            todo!()
+            handle_continue2(&mut derivation_manager)?;
         } else {
             unreachable!()
         };
-        
 
         let commits = context.git.iter_commit_history(&product_path)?;
         let last_state = commits.get(0);

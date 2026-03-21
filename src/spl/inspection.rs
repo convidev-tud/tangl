@@ -1,6 +1,7 @@
+use crate::git::error::GitError;
 use crate::git::interface::GitInterface;
 use crate::model::*;
-use crate::spl::{DerivationData, DerivationMetadata};
+use crate::spl::{DerivationData, DerivationMetadata, FeatureMetadata};
 use std::error::Error;
 
 pub struct InspectionManager<'a> {
@@ -34,11 +35,14 @@ impl<'a> InspectionManager<'a> {
                         Ok(data.clone())
                     } else {
                         let pointer = maybe_data.get_pointer().clone().unwrap();
-                        let next_commit = git.get_commit_from_hash(&pointer)?;
-                        if let Some(next_commit) = next_commit {
-                            get_current_state(&next_commit, git)
-                        } else {
-                            Err(format!("fatal: derivation metadata of commit {} points to commit {} which does not exist", commit.get_hash(), pointer).into())
+                        match git.get_commit_from_hash(&pointer) {
+                            Ok(next_commit) => get_current_state(&next_commit, git),
+                            Err(error) => {
+                                match error {
+                                    GitError::Git(_) => Err(format!("fatal: derivation metadata of commit {} points to commit {} which does not exist", commit.get_hash(), pointer).into()),
+                                    GitError::Io(e) => Err(e.into())
+                                }
+                            }
                         }
                     }
                 }
@@ -52,5 +56,26 @@ impl<'a> InspectionManager<'a> {
 
         let last_commit = self.git.get_last_commit(&product)?;
         get_current_state(&last_commit, self.git)
+    }
+
+    pub fn find_products_containing_feature(
+        &self,
+        feature: &NodePath<ConcreteFeature>,
+    ) -> Result<Vec<NodePath<ConcreteProduct>>, Box<dyn Error>> {
+        if let Some(product_root) = feature.clone().move_to_area().move_to_product_root() {
+            let mut products: Vec<NodePath<ConcreteProduct>> = vec![];
+            for product in product_root.iter_products_req() {
+                if let Some(concrete) = product.try_convert_to::<ConcreteProduct>() {
+                    let state = self.get_current_derivation_state(&concrete)?;
+                    let features = FeatureMetadata::qualified_paths(state.get_total());
+                    if features.contains(&feature.to_qualified_path()) {
+                        products.push(concrete);
+                    }
+                }
+            };
+            Ok(products)
+        } else {
+            Ok(vec![])
+        }
     }
 }

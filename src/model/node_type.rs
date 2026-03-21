@@ -13,6 +13,7 @@ pub trait SymbolicNodeType: Clone + Debug {
 pub trait HasFeatureChildren: SymbolicNodeType {}
 pub trait HasProductChildren: SymbolicNodeType {}
 pub trait HasBranch: SymbolicNodeType {}
+pub trait IsOnOrUnderArea: SymbolicNodeType {}
 
 #[derive(Clone, Debug)]
 pub struct ConcreteFeature;
@@ -30,6 +31,7 @@ impl SymbolicNodeType for ConcreteFeature {
 }
 impl HasFeatureChildren for ConcreteFeature {}
 impl HasBranch for ConcreteFeature {}
+impl IsOnOrUnderArea for ConcreteFeature {}
 
 #[derive(Clone, Debug)]
 pub struct AbstractFeature;
@@ -46,6 +48,7 @@ impl SymbolicNodeType for AbstractFeature {
     }
 }
 impl HasFeatureChildren for AbstractFeature {}
+impl IsOnOrUnderArea for AbstractFeature {}
 
 #[derive(Clone, Debug)]
 pub struct Feature;
@@ -62,6 +65,7 @@ impl SymbolicNodeType for Feature {
     }
 }
 impl HasFeatureChildren for Feature {}
+impl IsOnOrUnderArea for Feature {}
 
 #[derive(Clone, Debug)]
 pub struct FeatureRoot;
@@ -78,6 +82,7 @@ impl SymbolicNodeType for FeatureRoot {
     }
 }
 impl HasFeatureChildren for FeatureRoot {}
+impl IsOnOrUnderArea for FeatureRoot {}
 
 #[derive(Clone, Debug)]
 pub struct ConcreteProduct;
@@ -95,6 +100,7 @@ impl SymbolicNodeType for ConcreteProduct {
 }
 impl HasProductChildren for ConcreteProduct {}
 impl HasBranch for ConcreteProduct {}
+impl IsOnOrUnderArea for ConcreteProduct {}
 
 #[derive(Clone, Debug)]
 pub struct AbstractProduct;
@@ -111,6 +117,7 @@ impl SymbolicNodeType for AbstractProduct {
     }
 }
 impl HasProductChildren for AbstractProduct {}
+impl IsOnOrUnderArea for AbstractProduct {}
 
 #[derive(Clone, Debug)]
 pub struct Product;
@@ -127,6 +134,7 @@ impl SymbolicNodeType for Product {
     }
 }
 impl HasProductChildren for Product {}
+impl IsOnOrUnderArea for Product {}
 
 #[derive(Clone, Debug)]
 pub struct ProductRoot;
@@ -143,6 +151,7 @@ impl SymbolicNodeType for ProductRoot {
     }
 }
 impl HasProductChildren for ProductRoot {}
+impl IsOnOrUnderArea for ProductRoot {}
 
 #[derive(Clone, Debug)]
 pub struct ConcreteArea;
@@ -159,6 +168,7 @@ impl SymbolicNodeType for ConcreteArea {
     }
 }
 impl HasBranch for ConcreteArea {}
+impl IsOnOrUnderArea for ConcreteArea {}
 
 #[derive(Clone, Debug)]
 pub struct VirtualRoot;

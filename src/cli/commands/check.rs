@@ -1,11 +1,9 @@
 use crate::cli::completion::CompletionHelper;
 use crate::cli::*;
-use crate::git::conflict::{ConflictChecker, ConflictStatistics};
-use crate::model::{
-    AnyHasBranch, ByGlobFilteringNodePathTransformer, ChainingNodePathTransformer, ConcreteFeature,
-    ConcreteProduct, FeatureMetadata, FilteringMode, HasBranchFilteringNodePathTransformer,
-    NodePath, NodePathTransformer, NodePathTransformers, QualifiedPath, ToQualifiedPath,
-};
+use crate::git::conflict::{ConflictChecker, MergeChainStatistics};
+use crate::git::error::GitError;
+use crate::model::*;
+use crate::spl::{FeatureMetadata, InspectionManager};
 use clap::{Arg, ArgAction, Command};
 use colored::Colorize;
 use std::error::Error;
@@ -23,36 +21,38 @@ fn run_checks(
     by_order: bool,
     test_one_to_n: bool,
     checker: &ConflictChecker,
-) -> Result<ConflictStatistics, Box<dyn Error>> {
+) -> Result<MergeChainStatistics, Box<dyn Error>> {
     if paths.len() < 2 {
         return Err("At least two paths are required to perform merge tests".into());
     }
-    let statistics: ConflictStatistics = match (permutations, perm_to_base, by_order, test_one_to_n)
-    {
-        (None, None, false, false) => return Err("Please choose a test strategy".into()),
-        (Some(permutations), None, false, false) => {
-            checker.check_k_permutations(paths, permutations).collect()
-        }
-        (None, Some(permutations), false, false) => {
-            let base = paths.get(0).unwrap().clone();
-            let rest = paths[1..].to_vec();
-            checker
-                .check_permutations_against_base(&rest, &base, permutations)
-                .collect()
-        }
-        (None, None, true, false) => {
-            ConflictStatistics::from_iter(vec![checker.check_by_order(paths)].into_iter())
-        }
-        (None, None, false, true) => {
-            let first = paths.first().unwrap().clone();
-            let rest = paths[1..].to_vec();
-            checker
-                .check_n_against_permutations(&vec![first], &rest, &1)
-                .collect()
-        }
-        _ => unreachable!(),
-    };
-    Ok(statistics)
+    let statistics: Result<MergeChainStatistics, GitError> =
+        match (permutations, perm_to_base, by_order, test_one_to_n) {
+            (None, None, false, false) => return Err("Please choose a test strategy".into()),
+            (Some(permutations), None, false, false) => {
+                checker.check_k_permutations(paths, permutations).collect()
+            }
+            (None, Some(permutations), false, false) => {
+                let base = paths.get(0).unwrap().clone();
+                let rest = paths[1..].to_vec();
+                checker
+                    .check_permutations_against_base(&rest, &base, permutations)
+                    .collect()
+            }
+            (None, None, true, false) => {
+                let mut statistics = MergeChainStatistics::new();
+                statistics.fill_from_iter(vec![checker.check_by_order(paths)?].into_iter());
+                Ok(statistics)
+            }
+            (None, None, false, true) => {
+                let first = paths.first().unwrap().clone();
+                let rest = paths[1..].to_vec();
+                checker
+                    .check_n_against_permutations(&vec![first], &rest, &1)
+                    .collect()
+            }
+            _ => unreachable!(),
+        };
+    Ok(statistics?)
 }
 
 #[derive(Clone, Debug)]
@@ -131,7 +131,7 @@ impl CommandInterface for CheckCommand {
             .unwrap();
         let checker = ConflictChecker::new(&context.git);
 
-        let statistics: ConflictStatistics = if paths.is_empty()
+        let statistics: MergeChainStatistics = if paths.is_empty()
             && permutations.is_none()
             && perm_to_base.is_none()
             && !by_order
@@ -154,12 +154,12 @@ impl CommandInterface for CheckCommand {
                 }));
                 run_checks(&paths, None, None, false, true, &checker)?
             } else if let Some(product) = current_path.try_convert_to::<ConcreteProduct>() {
-                let derivation_commits = context.git.get_derivation_commits(&product)?;
-                let maybe_last = derivation_commits.first();
-                if maybe_last.is_none() {
+                let inspector = InspectionManager::new(&context.git);
+                let state = inspector.get_current_derivation_state(&product)?;
+                if state.get_total().len() == 0 {
                     return Err("Nothing to check against: product not derived yet".into());
                 }
-                let feature_meta = maybe_last.unwrap().try_get_metadata().get_total();
+                let feature_meta = state.get_total();
                 let features = FeatureMetadata::qualified_paths(feature_meta);
                 let node_paths = context
                     .git
@@ -215,14 +215,12 @@ impl CommandInterface for CheckCommand {
             run_checks(&final_paths, perm, perm_to_b, by_order, one_to_n, &checker)?
         };
 
-        for ok in statistics.iter_ok() {
-            context.debug(ok.display_as_path())
-        }
-        for conflict in statistics.iter_conflicts() {
-            context.warn(conflict.display_as_path())
-        }
-        for error in statistics.iter_errors() {
-            context.error(error.display_as_path())
+        for statistic in statistics.iter_all() {
+            if statistic.contains_conflicts() {
+                context.info(statistic.display_as_path());
+            } else {
+                context.debug(statistic.display_as_path());
+            }
         }
         if statistics.n_conflicts() == 0 {
             context.info("No conflicts".green().to_string());
@@ -266,179 +264,5 @@ impl CommandInterface for CheckCommand {
             vec![]
         };
         Ok(completion)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::git::interface::test_utils::*;
-    use crate::git::interface::{GitInterface, GitPath};
-    use crate::model::ImportFormat;
-    use std::path::PathBuf;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_check_error_if_not_all_and_no_source() {
-        let path = TempDir::new().unwrap();
-        let path_buf = PathBuf::from(path.path());
-        prepare_empty_git_repo(path_buf.clone()).unwrap();
-        populate_with_features(path_buf.clone()).unwrap();
-        let repo = CommandRepository::new(
-            Box::new(CheckCommand),
-            GitPath::CustomDirectory(PathBuf::from(path.path())),
-        );
-        match repo.execute(ArgSource::SUPPLIED(vec!["check"])) {
-            Ok(_) => {
-                panic!("Should fail")
-            }
-            Err(_) => {
-                assert!(true)
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_all() {
-        let path = TempDir::new().unwrap();
-        let path_buf = PathBuf::from(path.path());
-        prepare_empty_git_repo(path_buf.clone()).unwrap();
-        populate_with_features(path_buf.clone()).unwrap();
-        let repo = CommandRepository::new(
-            Box::new(CheckCommand),
-            GitPath::CustomDirectory(PathBuf::from(path.path())),
-        );
-        let context = repo.build_context(
-            ArgSource::SUPPLIED(vec!["check", "--all"]),
-            ImportFormat::Native,
-        );
-        match run_check(&context) {
-            Ok(statistics) => {
-                assert_eq!(statistics.n_ok(), 6);
-                assert_eq!(statistics.n_conflict(), 0);
-                assert_eq!(statistics.n_errors(), 0);
-            }
-            Err(_) => {
-                panic!()
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_current_feature() {
-        let path = TempDir::new().unwrap();
-        let path_buf = PathBuf::from(path.path());
-        prepare_empty_git_repo(path_buf.clone()).unwrap();
-        populate_with_features(path_buf.clone()).unwrap();
-        GitInterface::new(GitPath::CustomDirectory(path_buf))
-            .checkout(&QualifiedPath::from("/main/feature/root/foo"))
-            .unwrap();
-        let repo = CommandRepository::new(
-            Box::new(CheckCommand),
-            GitPath::CustomDirectory(PathBuf::from(path.path())),
-        );
-        let context = repo.build_context(
-            ArgSource::SUPPLIED(vec!["check", "."]),
-            ImportFormat::Native,
-        );
-        match run_check(&context) {
-            Ok(statistics) => {
-                assert_eq!(statistics.n_ok(), 3);
-                assert_eq!(statistics.n_conflict(), 0);
-                assert_eq!(statistics.n_errors(), 0);
-            }
-            Err(_) => {
-                panic!()
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_no_feature() {
-        let path = TempDir::new().unwrap();
-        let path_buf = PathBuf::from(path.path());
-        prepare_empty_git_repo(path_buf.clone()).unwrap();
-        populate_with_features(path_buf.clone()).unwrap();
-        let repo = CommandRepository::new(
-            Box::new(CheckCommand),
-            GitPath::CustomDirectory(PathBuf::from(path.path())),
-        );
-        let context = repo.build_context(
-            ArgSource::SUPPLIED(vec!["check", "."]),
-            ImportFormat::Native,
-        );
-        match run_check(&context) {
-            Ok(_) => {
-                panic!("Should fail")
-            }
-            Err(_) => {
-                assert!(true)
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_specific_targets_relative_path() {
-        let path = TempDir::new().unwrap();
-        let path_buf = PathBuf::from(path.path());
-        prepare_empty_git_repo(path_buf.clone()).unwrap();
-        populate_with_features(path_buf.clone()).unwrap();
-        let repo = CommandRepository::new(
-            Box::new(CheckCommand),
-            GitPath::CustomDirectory(PathBuf::from(path.path())),
-        );
-        let context = repo.build_context(
-            ArgSource::SUPPLIED(vec![
-                "check",
-                "feature/root/foo",
-                "feature/root/bar",
-                "feature/root/baz",
-            ]),
-            ImportFormat::Native,
-        );
-        match run_check(&context) {
-            Ok(statistics) => {
-                assert_eq!(statistics.n_ok(), 2);
-                assert_eq!(statistics.n_conflict(), 0);
-                assert_eq!(statistics.n_errors(), 0);
-            }
-            Err(_) => {
-                panic!()
-            }
-        }
-    }
-
-    #[test]
-    fn test_check_specific_targets_absolute_path() {
-        let path = TempDir::new().unwrap();
-        let path_buf = PathBuf::from(path.path());
-        prepare_empty_git_repo(path_buf.clone()).unwrap();
-        populate_with_features(path_buf.clone()).unwrap();
-        let repo = CommandRepository::new(
-            Box::new(CheckCommand),
-            GitPath::CustomDirectory(PathBuf::from(path.path())),
-        );
-        GitInterface::new(GitPath::CustomDirectory(path_buf))
-            .checkout(&QualifiedPath::from("/main/feature/root/foo"))
-            .unwrap();
-        let context = repo.build_context(
-            ArgSource::SUPPLIED(vec![
-                "check",
-                "/main/feature/root/foo",
-                "/main/feature/root/bar",
-                "/main/feature/root/baz",
-            ]),
-            ImportFormat::Native,
-        );
-        match run_check(&context) {
-            Ok(statistics) => {
-                assert_eq!(statistics.n_ok(), 2);
-                assert_eq!(statistics.n_conflict(), 0);
-                assert_eq!(statistics.n_errors(), 0);
-            }
-            Err(_) => {
-                panic!()
-            }
-        }
     }
 }

@@ -1,7 +1,6 @@
 use crate::cli::completion::*;
 use crate::cli::*;
 use crate::model::{AnyHasBranch, ModelError, QualifiedPath, ToQualifiedPath};
-use crate::util::u8_to_string;
 use clap::{Arg, Command};
 use colored::Colorize;
 use std::error::Error;
@@ -46,23 +45,24 @@ impl CommandInterface for CheckoutCommand {
         };
         let current = context.git.get_current_qualified_path()?;
         let out = context.git.checkout(&node_path)?;
-        if out.status.success() {
-            if current == node_path.to_qualified_path() {
-                context.info(format!(
-                    "Already on branch {}",
-                    node_path.to_string().blue(),
-                ));
-            } else {
-                context.info(format!(
-                    "Switched to {} branch {}",
-                    node_path.get_actual_type().get_formatted_name(),
-                    node_path.to_string().blue(),
-                ));
-            }
-            Ok(())
+        if current == node_path.to_qualified_path() {
+            context.info(format!(
+                "Already on branch {}",
+                node_path.to_string().blue(),
+            ));
         } else {
-            Err(u8_to_string(&out.stderr).into())
+            context.info(format!(
+                "Switched to {} branch {}",
+                node_path.get_actual_type().get_formatted_name(),
+                node_path.to_string().blue(),
+            ));
+            let rest = out.split("\n").collect::<Vec<&str>>()[1..]
+                .join("\n")
+                .trim()
+                .to_string();
+            context.info(rest)
         }
+        Ok(())
     }
     fn shell_complete(
         &self,

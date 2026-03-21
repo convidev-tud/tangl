@@ -38,6 +38,13 @@ impl<T: HasProductChildren> NodePath<T> {
     }
 }
 
+impl<T: IsOnOrUnderArea> NodePath<T> {
+    pub fn move_to_area(self) -> NodePath<ConcreteArea> {
+        let path = self.path[..2].to_vec();
+        NodePath::<ConcreteArea>::new(path, self.unknown_mode)
+    }
+}
+
 impl NodePath<AnyNode> {
     pub fn from_concrete<T: SymbolicNodeType>(other: &NodePath<T>) -> Self {
         Self::new(other.path.clone(), other.unknown_mode)

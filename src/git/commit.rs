@@ -1,6 +1,6 @@
+use crate::git::error::GitError;
 use crate::git::interface::GitInterface;
 use serde::Deserialize;
-use std::io;
 
 pub const METADATA_SEPARATOR: &str = "---metadata---";
 
@@ -105,7 +105,7 @@ impl<'a> CommitIterator<'a> {
 }
 
 impl<'a> Iterator for CommitIterator<'a> {
-    type Item = Result<Commit, io::Error>;
+    type Item = Result<Commit, GitError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_position < self.hashes.len() {
@@ -113,7 +113,7 @@ impl<'a> Iterator for CommitIterator<'a> {
             let commit = self.git.get_commit_from_hash(hash);
             self.current_position += 1;
             match commit {
-                Ok(commit) => Some(Ok(commit.unwrap())),
+                Ok(commit) => Some(Ok(commit)),
                 Err(err) => Some(Err(err)),
             }
         } else {
