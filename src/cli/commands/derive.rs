@@ -387,7 +387,13 @@ impl CommandInterface for DeriveCommand {
 
         let features = context.git.get_model().assert_all(&all_feature_paths)?;
         let mut derivation_manager = DerivationManager::new(&product_path, &context.git)?;
-
+        
+        if abort_derivation {
+            let state = derivation_manager.abort_derivation()?;
+            context.info(format!("Successfully aborted derivation {}", state.get_id()));
+            context.info(format!("Reset to state before derivation ({})", state.get_initial_commit()));
+            return Ok(());
+        }
         if !features.is_empty() {
             handle_initialize(features, &mut derivation_manager)?;
         } else if continue_derivation {
@@ -395,32 +401,6 @@ impl CommandInterface for DeriveCommand {
         } else {
             unreachable!()
         };
-
-        let commits = context.git.iter_commit_history(&product_path)?;
-        let last_state = commits.get(0);
-
-        if handle_abort(last_state.clone(), abort_derivation, context)? {
-            return Ok(());
-        }
-        if handle_continue(
-            last_state.clone(),
-            continue_derivation,
-            optimization,
-            context,
-        )? {
-            return Ok(());
-        }
-        let new_state = get_next_state(
-            last_state.clone(),
-            optimization,
-            &features,
-            &product_path,
-            context,
-        )?;
-        if new_state.is_none() {
-            return Ok(());
-        }
-        handle_derivation(new_state.unwrap(), context)?;
         Ok(())
     }
 

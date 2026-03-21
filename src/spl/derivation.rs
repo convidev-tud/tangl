@@ -2,7 +2,7 @@ use crate::git::conflict::MergeStatistic;
 use crate::git::error::{GitModelError, GitSerdeError};
 use crate::git::interface::GitInterface;
 use crate::model::*;
-use crate::spl::{ContinueDerivationError, InitializeDerivationError, InspectionManager};
+use crate::spl::{AbortDerivationError, ContinueDerivationError, InitializeDerivationError, InspectionManager};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -297,5 +297,17 @@ impl<'a> DerivationManager<'a> {
             }
             DerivationState::None => Err(ContinueDerivationError::NoDerivationInProgress),
         }
+    }
+    
+    pub fn abort_derivation(self) -> Result<DerivationData, AbortDerivationError> {
+        match self.current_state.get_state() {
+            DerivationState::InProgress => {
+                let previous = self.current_state.get_initial_commit();
+                self.git.abort_merge()?;
+                self.git.reset_hard(previous)?;
+            },
+            DerivationState::None => return Err(AbortDerivationError::NoDerivationInProgress),
+        };
+        Ok(self.current_state)
     }
 }

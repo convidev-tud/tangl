@@ -2,7 +2,6 @@ use crate::git::conflict::{MergeConflict, MergeStatistic, MergeSuccess};
 use crate::git::error::{GitCommandError, GitError, GitWrongNodeTypeError};
 use crate::model::*;
 use crate::util::u8_to_string;
-use serde::de::Unexpected::Str;
 use std::io;
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -361,10 +360,10 @@ impl GitInterface {
         )?)
     }
 
-    pub fn reset_hard(&self, commit: &str) -> Result<String, GitError> {
+    pub fn reset_hard<S: Into<String>>(&self, commit: S) -> Result<String, GitError> {
         let out = self
             .raw_git_interface
-            .run(vec!["reset", "--hard", commit])?;
+            .run(vec!["reset", "--hard", commit.into().as_str()])?;
         Ok(output_to_result(out)?)
     }
 }

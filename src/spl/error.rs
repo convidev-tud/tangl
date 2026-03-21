@@ -85,3 +85,29 @@ impl Display for ContinueDerivationError {
 }
 
 impl Error for ContinueDerivationError {}
+
+#[derive(Debug)]
+pub enum AbortDerivationError {
+    Io(io::Error),
+    Git(GitCommandError),
+    NoDerivationInProgress,
+}
+impl From<GitError> for AbortDerivationError {
+    fn from(value: GitError) -> Self {
+        match value {
+            GitError::Io(e) => Self::Io(e),
+            GitError::Git(e) => Self::Git(e),
+        }
+    }
+}
+impl Display for AbortDerivationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => e.fmt(f),
+            Self::Git(e) => e.fmt(f),
+            Self::NoDerivationInProgress => f.write_str("fatal: no derivation in progress"),
+        }
+    }
+}
+
+impl Error for AbortDerivationError {}
