@@ -14,6 +14,13 @@ const ABORT: &str = "abort";
 const RESET: &str = "reset";
 const OPTIMIZE: &str = "optimize";
 
+pub fn fix_conflicts_hint() -> String {
+    format!(
+        "\nFix all conflicts, then run {} to commence the derivation.",
+        format_command_help("tangl derive --continue"),
+    )
+}
+
 fn handle_initialize(
     features: Vec<NodePath<ConcreteFeature>>,
     optimize: bool,
@@ -98,10 +105,7 @@ fn handle_continue(
             still_missing.get_chain().len()
         ));
         logger.info(still_missing.display_as_path());
-        logger.info(format!(
-            "\nFix all conflicts, then run {} to commence the derivation.",
-            format_command_help("tangl derive --continue"),
-        ));
+        logger.info(fix_conflicts_hint());
     } else {
         logger.info("\nAll features merged. Derivation complete")
     }

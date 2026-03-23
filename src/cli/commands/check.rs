@@ -155,7 +155,7 @@ impl CommandInterface for CheckCommand {
                 run_checks(&paths, None, None, false, true, &checker)?
             } else if let Some(product) = current_path.try_convert_to::<ConcreteProduct>() {
                 let inspector = InspectionManager::new(&context.git);
-                let state = inspector.get_current_derivation_state(&product)?;
+                let state = inspector.get_last_derivation_state(&product)?;
                 if state.get_total().len() == 0 {
                     return Err("Nothing to check against: product not derived yet".into());
                 }

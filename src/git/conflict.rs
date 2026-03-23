@@ -133,7 +133,7 @@ impl MergeChainStatistic {
         }
         self.chain.insert(index, stat);
     }
-    
+
     pub fn remove(&mut self, index: usize) -> MergeStatistic {
         let statistic = self.chain.remove(index);
         match &statistic {
@@ -143,11 +143,11 @@ impl MergeChainStatistic {
         }
         statistic
     }
-    
+
     pub fn get(&self, index: usize) -> Option<&MergeStatistic> {
         self.chain.get(index)
     }
-    
+
     pub fn replace(&mut self, index: usize, stat: MergeStatistic) {
         self.remove(index);
         self.insert(index, stat);

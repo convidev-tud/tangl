@@ -36,7 +36,7 @@ impl CommandInterface for StatusCommand {
 
         if let Some(product) = current_path.try_convert_to::<ConcreteProduct>() {
             let inspector = InspectionManager::new(&context.git);
-            let state = inspector.get_current_derivation_state(&product)?;
+            let state = inspector.get_last_derivation_state(&product)?;
             match state.get_state() {
                 DerivationState::None => context.logger.info("No derivation in progress"),
                 DerivationState::InProgress => {
@@ -71,11 +71,7 @@ impl CommandInterface for StatusCommand {
                                 .to_string()
                                 .yellow()
                         ));
-                        no_first_line += format!(
-                            "\nWhen all conflicts are fixed, run {} to continue the derivation.",
-                            format_command_help("tangl derive --continue")
-                        )
-                        .as_str();
+                        no_first_line += fix_conflicts_hint().as_str();
                     } else {
                         no_first_line += format!(
                             "\nRun {} to continue the derivation.",

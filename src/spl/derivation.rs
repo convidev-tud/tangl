@@ -1,4 +1,7 @@
-use crate::git::conflict::{ConflictAnalyzer, ConflictChecker, MergeChainStatistic, MergeConflict, MergePending, MergeStatistic, MergeSuccess};
+use crate::git::conflict::{
+    ConflictAnalyzer, ConflictChecker, MergeChainStatistic, MergeConflict, MergePending,
+    MergeStatistic, MergeSuccess,
+};
 use crate::git::error::{GitError, GitModelError, GitSerdeError};
 use crate::git::interface::GitInterface;
 use crate::logging::TanglLogger;
@@ -142,6 +145,9 @@ impl DerivationData {
             }
         }
     }
+    pub fn new_initial<S: Into<String>>(initial_commit: S) -> Self {
+        Self::new(Vec::new(), initial_commit, None)
+    }
     pub fn as_none(&mut self) {
         self.state = DerivationState::None.to_string();
     }
@@ -216,11 +222,30 @@ impl DerivationMetadata {
             }
         }
     }
-    pub fn get_pointer(&self) -> &Option<String> {
-        &self.pointer
+    pub fn get_pointer(&self) -> Option<&String> {
+        self.pointer.as_ref()
     }
-    pub fn get_data(&self) -> &Option<DerivationData> {
-        &self.data
+    pub fn get_data(&self) -> Option<&DerivationData> {
+        self.data.as_ref()
+    }
+}
+
+pub struct DerivationCommit {
+    commit: Commit,
+    metadata: DerivationMetadata,
+}
+
+impl DerivationCommit {
+    pub fn new(commit: Commit, metadata: DerivationMetadata) -> Self {
+        Self { commit, metadata }
+    }
+
+    pub fn get_commit(&self) -> &Commit {
+        &self.commit
+    }
+
+    pub fn get_metadata(&self) -> &DerivationMetadata {
+        &self.metadata
     }
 }
 
@@ -238,7 +263,7 @@ impl<'a> DerivationManager<'a> {
         logger: &'a TanglLogger,
     ) -> Result<Self, Box<dyn Error>> {
         let inspector = InspectionManager::new(git);
-        let current_state = inspector.get_current_derivation_state(&product)?;
+        let current_state = inspector.get_last_derivation_state(&product)?;
         Ok(Self {
             product,
             current_state,
@@ -253,9 +278,8 @@ impl<'a> DerivationManager<'a> {
         metadata: &DerivationMetadata,
     ) -> Result<String, GitSerdeError> {
         let real_message = message.into();
-        let metadata_json = metadata.to_commit_message()?;
-        let total = format!("{real_message}\n\n{metadata_json}");
-        Ok(self.git.empty_commit(&total)?)
+        let container = CommitMetadataContainer::new(metadata)?;
+        Ok(self.git.empty_commit(real_message, Some(&container))?)
     }
 
     fn run_derivation_until_conflict(

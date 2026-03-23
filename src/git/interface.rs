@@ -22,6 +22,19 @@ fn output_to_result(output: Output, command: &Vec<&str>) -> Result<String, GitCo
     }
 }
 
+fn make_commit_message_with_metadata<S: Into<String>>(
+    message: S,
+    metadata: Option<&CommitMetadataContainer>,
+) -> String {
+    let message = message.into();
+    if let Some(metadata) = metadata {
+        let meta = metadata.get_metadata();
+        format!("{message}\n\n{meta}")
+    } else {
+        message
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum GitPath {
     CurrentDirectory,
@@ -255,7 +268,7 @@ impl GitInterface {
         let out = self.raw_git_interface.run(&command)?;
         Ok(output_to_result(out, &command)?)
     }
-    
+
     pub fn pending_merge(&self) -> Result<bool, GitError> {
         let status = self.status()?;
         Ok(status.contains("merg"))
@@ -339,16 +352,24 @@ impl GitInterface {
         Ok(message.split("\n").map(|e| e.to_string()).collect())
     }
 
-    pub fn commit<S: Into<String>>(&self, message: S) -> Result<String, GitError> {
-        let message_string = message.into();
-        let command = vec!["commit", "-m", message_string.as_str()];
+    pub fn commit<S: Into<String>>(
+        &self,
+        message: S,
+        metadata: Option<&CommitMetadataContainer>,
+    ) -> Result<String, GitError> {
+        let commit_message = make_commit_message_with_metadata(message, metadata);
+        let command = vec!["commit", "-m", commit_message.as_str()];
         let out = self.raw_git_interface.run(&command)?;
         Ok(output_to_result(out, &command)?)
     }
 
-    pub fn empty_commit<S: Into<String>>(&self, message: S) -> Result<String, GitError> {
-        let message_string = message.into();
-        let command = vec!["commit", "--allow-empty", "-m", message_string.as_str()];
+    pub fn empty_commit<S: Into<String>>(
+        &self,
+        message: S,
+        metadata: Option<&CommitMetadataContainer>,
+    ) -> Result<String, GitError> {
+        let commit_message = make_commit_message_with_metadata(message, metadata);
+        let command = vec!["commit", "--allow-empty", "-m", commit_message.as_str()];
         let out = self.raw_git_interface.run(&command)?;
         Ok(output_to_result(out, &command)?)
     }

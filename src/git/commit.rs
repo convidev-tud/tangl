@@ -1,6 +1,5 @@
 use crate::git::error::GitError;
 use crate::git::interface::GitInterface;
-use serde::Deserialize;
 
 pub const METADATA_SEPARATOR: &str = "---metadata---";
 
@@ -45,7 +44,21 @@ impl CommitMetadata for Base {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+pub struct CommitMetadataContainer {
+    metadata: String,
+}
+
+impl CommitMetadataContainer {
+    pub fn new(metadata: &impl CommitMetadata) -> Result<Self, serde_json::Error> {
+        Ok(Self { metadata: metadata.to_commit_message()? })
+    }
+    
+    pub fn get_metadata(&self) -> &String {
+        &self.metadata
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Commit {
     hash: String,
     message: String,
