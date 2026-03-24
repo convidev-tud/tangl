@@ -71,9 +71,12 @@ impl From<GitSerdeError> for ContinueDerivationError {
         }
     }
 }
-impl From<io::Error> for ContinueDerivationError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
+impl From<GitError> for ContinueDerivationError {
+    fn from(value: GitError) -> Self {
+        match value {
+            GitError::Io(e) => Self::Io(e),
+            GitError::Git(e) => Self::Git(e),
+        }
     }
 }
 impl Display for ContinueDerivationError {

@@ -1,52 +1,18 @@
 use crate::model::*;
 use globset::{GlobBuilder, GlobMatcher};
+use std::marker::PhantomData;
 
 pub trait NodePathTransformer<A, B>
 where
     A: SymbolicNodeType,
     B: SymbolicNodeType,
 {
-    fn apply(&self, node_path: NodePath<A>) -> Option<NodePath<B>>;
+    fn apply(&self, node_path: Option<NodePath<A>>) -> Option<NodePath<B>>;
     fn transform(
         &self,
         node_paths: impl Iterator<Item = NodePath<A>>,
     ) -> impl Iterator<Item = NodePath<B>> {
-        node_paths.filter_map(|path| self.apply(path))
-    }
-}
-
-pub enum NodePathTransformers {
-    ChainingNodePathTransformer(ChainingNodePathTransformer),
-    HasBranchFilteringNodePathTransformer(HasBranchFilteringNodePathTransformer),
-    ByQPathFilteringNodePathTransformer(ByQPathFilteringNodePathTransformer),
-    ByGlobFilteringNodePathTransformer(ByGlobFilteringNodePathTransformer),
-}
-impl NodePathTransformer<AnyNode, AnyNode> for NodePathTransformers {
-    fn apply(&self, node_path: NodePath<AnyNode>) -> Option<NodePath<AnyNode>> {
-        match self {
-            NodePathTransformers::ChainingNodePathTransformer(t) => t.apply(node_path),
-            NodePathTransformers::HasBranchFilteringNodePathTransformer(t) => t.apply(node_path),
-            NodePathTransformers::ByQPathFilteringNodePathTransformer(t) => t.apply(node_path),
-            NodePathTransformers::ByGlobFilteringNodePathTransformer(t) => t.apply(node_path),
-        }
-    }
-}
-
-pub struct ChainingNodePathTransformer {
-    transformers: Vec<NodePathTransformers>,
-}
-impl ChainingNodePathTransformer {
-    pub fn new(transformers: Vec<NodePathTransformers>) -> Self {
-        Self { transformers }
-    }
-}
-impl NodePathTransformer<AnyNode, AnyNode> for ChainingNodePathTransformer {
-    fn apply(&self, node_path: NodePath<AnyNode>) -> Option<NodePath<AnyNode>> {
-        let mut result: Option<NodePath<AnyNode>> = Some(node_path);
-        for transformer in self.transformers.iter() {
-            result = Some(transformer.apply(result.take()?)?);
-        }
-        result
+        node_paths.filter_map(|path| self.apply(Some(path)))
     }
 }
 
@@ -59,9 +25,10 @@ impl HasBranchFilteringNodePathTransformer {
     }
 }
 impl<A: SymbolicNodeType> NodePathTransformer<A, A> for HasBranchFilteringNodePathTransformer {
-    fn apply(&self, node_path: NodePath<A>) -> Option<NodePath<A>> {
-        if node_path.get_metadata().has_branch() == self.has_branch {
-            Some(node_path)
+    fn apply(&self, node_path: Option<NodePath<A>>) -> Option<NodePath<A>> {
+        let path = node_path?;
+        if path.get_metadata().has_branch() == self.has_branch {
+            Some(path)
         } else {
             None
         }
@@ -82,20 +49,21 @@ impl ByQPathFilteringNodePathTransformer {
     }
 }
 impl<A: SymbolicNodeType> NodePathTransformer<A, A> for ByQPathFilteringNodePathTransformer {
-    fn apply(&self, node_path: NodePath<A>) -> Option<NodePath<A>> {
+    fn apply(&self, node_path: Option<NodePath<A>>) -> Option<NodePath<A>> {
+        let path = node_path?;
         match self.mode {
             FilteringMode::INCLUDE => {
-                if self.paths.contains(&node_path.to_qualified_path()) {
-                    Some(node_path)
+                if self.paths.contains(&path.to_qualified_path()) {
+                    Some(path)
                 } else {
                     None
                 }
             }
             FilteringMode::EXCLUDE => {
-                if self.paths.contains(&node_path.to_qualified_path()) {
+                if self.paths.contains(&path.to_qualified_path()) {
                     None
                 } else {
-                    Some(node_path)
+                    Some(path)
                 }
             }
         }
@@ -125,18 +93,19 @@ impl ByGlobFilteringNodePathTransformer {
         })
     }
 }
-impl NodePathTransformer<AnyNode, AnyNode> for ByGlobFilteringNodePathTransformer {
-    fn apply(&self, node_path: NodePath<AnyNode>) -> Option<NodePath<AnyNode>> {
+impl<A: SymbolicNodeType> NodePathTransformer<A, A> for ByGlobFilteringNodePathTransformer {
+    fn apply(&self, node_path: Option<NodePath<A>>) -> Option<NodePath<A>> {
+        let path = node_path?;
         let mut found_match = false;
         for glob in self.globs.iter() {
-            if glob.is_match(&node_path.to_string()) {
+            if glob.is_match(&path.to_string()) {
                 found_match = true
             }
         }
         match self.filtering_mode {
             FilteringMode::INCLUDE => {
                 if found_match {
-                    Some(node_path)
+                    Some(path)
                 } else {
                     None
                 }
@@ -145,26 +114,74 @@ impl NodePathTransformer<AnyNode, AnyNode> for ByGlobFilteringNodePathTransforme
                 if found_match {
                     None
                 } else {
-                    Some(node_path)
+                    Some(path)
                 }
             }
         }
     }
 }
 
-pub struct ToTypeNodePathTransformer {}
-impl ToTypeNodePathTransformer {
+pub struct ByTypeFilteringNodePathTransformer<In, Out>
+where
+    In: SymbolicNodeType,
+    Out: SymbolicNodeType,
+{
+    _in: PhantomData<In>,
+    _out: PhantomData<Out>,
+}
+impl<In, Out> ByTypeFilteringNodePathTransformer<In, Out>
+where
+    In: SymbolicNodeType,
+    Out: SymbolicNodeType,
+{
     pub fn new() -> Self {
-        Self {}
+        Self {
+            _in: PhantomData,
+            _out: PhantomData,
+        }
     }
 }
-impl<T1, T2> NodePathTransformer<T1, T2> for ToTypeNodePathTransformer
+impl<In, Out> NodePathTransformer<In, Out> for ByTypeFilteringNodePathTransformer<In, Out>
 where
-    T1: SymbolicNodeType,
-    T2: SymbolicNodeType,
+    In: SymbolicNodeType,
+    Out: SymbolicNodeType,
 {
-    fn apply(&self, node_path: NodePath<T1>) -> Option<NodePath<T2>> {
-        node_path.try_convert_to::<T2>()
+    fn apply(&self, node_path: Option<NodePath<In>>) -> Option<NodePath<Out>> {
+        node_path?.try_convert_to::<Out>()
+    }
+}
+
+// Compound transformers
+
+pub struct GlobToTypeNodePathTransformer<In, Out>
+where
+    In: SymbolicNodeType,
+    Out: SymbolicNodeType,
+{
+    glob_filter: ByGlobFilteringNodePathTransformer,
+    type_filter: ByTypeFilteringNodePathTransformer<In, Out>,
+}
+impl<In, Out> GlobToTypeNodePathTransformer<In, Out>
+where
+    In: SymbolicNodeType,
+    Out: SymbolicNodeType,
+{
+    pub fn new(globs: &Vec<QualifiedPath>, mode: FilteringMode) -> Result<Self, globset::Error> {
+        let glob_filter = ByGlobFilteringNodePathTransformer::new(globs, mode)?;
+        let type_filter = ByTypeFilteringNodePathTransformer::new();
+        Ok(Self {
+            glob_filter,
+            type_filter,
+        })
+    }
+}
+impl<In, Out> NodePathTransformer<In, Out> for GlobToTypeNodePathTransformer<In, Out>
+where
+    In: SymbolicNodeType,
+    Out: SymbolicNodeType,
+{
+    fn apply(&self, node_path: Option<NodePath<In>>) -> Option<NodePath<Out>> {
+        self.type_filter.apply(self.glob_filter.apply(node_path))
     }
 }
 
@@ -178,28 +195,6 @@ mod tests {
         model.insert_qualified_path(QualifiedPath::from("/main/feature/root"), false);
         model.insert_qualified_path(QualifiedPath::from("/main/feature/root/foo"), false);
         model
-    }
-
-    #[test]
-    fn test_chaining_node_path_transformer() {
-        let model = prepare_model();
-        let chain = ChainingNodePathTransformer::new(vec![
-            NodePathTransformers::ByQPathFilteringNodePathTransformer(
-                ByQPathFilteringNodePathTransformer::new(
-                    vec![QualifiedPath::from("/main/feature/root")],
-                    FilteringMode::EXCLUDE,
-                ),
-            ),
-            NodePathTransformers::HasBranchFilteringNodePathTransformer(
-                HasBranchFilteringNodePathTransformer::new(true),
-            ),
-        ]);
-        let root = model.get_virtual_root();
-        let actual = chain
-            .transform(root.iter_children_req())
-            .map(|node_path| node_path.to_qualified_path())
-            .collect::<Vec<_>>();
-        assert_eq!(actual, vec!["/main/feature/root/foo"]);
     }
 
     #[test]

@@ -50,9 +50,11 @@ pub struct CommitMetadataContainer {
 
 impl CommitMetadataContainer {
     pub fn new(metadata: &impl CommitMetadata) -> Result<Self, serde_json::Error> {
-        Ok(Self { metadata: metadata.to_commit_message()? })
+        Ok(Self {
+            metadata: metadata.to_commit_message()?,
+        })
     }
-    
+
     pub fn get_metadata(&self) -> &String {
         &self.metadata
     }

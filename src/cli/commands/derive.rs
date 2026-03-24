@@ -223,17 +223,10 @@ impl CommandInterface for DeriveCommand {
                         .into_iter()
                         .map(|p| feature_root_path.clone() + QualifiedPath::from(p))
                         .collect();
-                    let transformer = ChainingNodePathTransformer::new(vec![
-                        NodePathTransformers::HasBranchFilteringNodePathTransformer(
-                            HasBranchFilteringNodePathTransformer::new(true),
-                        ),
-                        NodePathTransformers::ByQPathFilteringNodePathTransformer(
-                            ByQPathFilteringNodePathTransformer::new(
-                                to_filter,
-                                FilteringMode::EXCLUDE,
-                            ),
-                        ),
-                    ]);
+                    let transformer = GlobToTypeNodePathTransformer::<_, AnyHasBranch>::new(
+                        &to_filter,
+                        FilteringMode::EXCLUDE,
+                    )?;
                     completion_helper.complete_qualified_paths(
                         feature_root.to_qualified_path(),
                         transformer

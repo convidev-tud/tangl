@@ -181,24 +181,14 @@ impl CommandInterface for CheckCommand {
                 .map(|path| current_path.clone() + path.clone())
                 .collect();
             let mut final_paths: Vec<NodePath<AnyHasBranch>> = Vec::new();
+            let finder =
+                GlobToTypeNodePathTransformer::new(&transformed_paths, FilteringMode::INCLUDE)?;
             for path in transformed_paths.iter() {
                 let s = path.to_string();
                 if s.contains("*") || s.contains("[") || s.contains("]") {
-                    let filter1 = HasBranchFilteringNodePathTransformer::new(true);
-                    let filter2 = ByGlobFilteringNodePathTransformer::new(
-                        &transformed_paths,
-                        FilteringMode::INCLUDE,
-                    )?;
-                    let node_finder = ChainingNodePathTransformer::new(vec![
-                        NodePathTransformers::HasBranchFilteringNodePathTransformer(filter1),
-                        NodePathTransformers::ByGlobFilteringNodePathTransformer(filter2),
-                    ]);
                     let root = context.git.get_model().get_virtual_root();
                     let iterator = root.iter_children_req();
-                    let found: Vec<NodePath<AnyHasBranch>> = node_finder
-                        .transform(iterator)
-                        .map(|path| path.try_convert_to::<AnyHasBranch>().unwrap())
-                        .collect();
+                    let found: Vec<NodePath<AnyHasBranch>> = finder.transform(iterator).collect();
                     final_paths.extend(found);
                 } else {
                     final_paths.push(context.git.get_model().assert_path(&path)?)

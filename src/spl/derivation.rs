@@ -295,16 +295,12 @@ impl<'a> DerivationManager<'a> {
         let mut missing_feature: Option<NodePath<ConcreteFeature>> = None;
         for feature in features {
             let (statistic, _) = self.git.merge(&feature)?;
-            match statistic {
-                MergeStatistic::Success(_) => {
-                    new_state.mark_as_completed(&feature.to_qualified_path())
-                }
-                MergeStatistic::Conflict(_) => {
-                    self.git.abort_merge()?;
-                    missing_feature = Some(feature);
-                    break;
-                }
-                _ => unreachable!(),
+            if statistic.contains_conflicts() {
+                self.git.abort_merge()?;
+                missing_feature = Some(feature);
+                break;
+            } else {
+                new_state.mark_as_completed(&feature.to_qualified_path());
             }
         }
         if missing_feature.is_none() {
@@ -363,7 +359,7 @@ impl<'a> DerivationManager<'a> {
     ) -> Result<DerivationData, InitializeDerivationError> {
         match self.current_state.get_state() {
             DerivationState::None => {
-                let transformer = ToTypeNodePathTransformer::new();
+                let transformer = ByTypeFilteringNodePathTransformer::new();
                 let transformed = transformer.transform(features.into_iter()).collect();
                 let chain = &self.predict_conflicts(&transformed, optimize)?;
                 let current_commit = self.git.get_last_commit(&self.product)?;

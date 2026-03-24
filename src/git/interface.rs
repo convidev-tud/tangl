@@ -1,4 +1,4 @@
-use crate::git::conflict::{MergeConflict, MergeStatistic, MergeSuccess};
+use crate::git::conflict::{MergeChainStatistic, MergeConflict, MergeStatistic, MergeSuccess};
 use crate::git::error::{GitCommandError, GitError, GitWrongNodeTypeError};
 use crate::model::*;
 use std::io;
@@ -247,20 +247,29 @@ impl GitInterface {
     pub fn merge<T: HasBranch>(
         &self,
         path: &NodePath<T>,
-    ) -> Result<(MergeStatistic, String), io::Error> {
+    ) -> Result<(MergeChainStatistic, String), GitError> {
         let branch = path.to_qualified_path().to_git_branch();
         let command = vec!["merge", branch.as_str()];
         let out = self.raw_git_interface.run(&command)?;
         let result = if out.status.success() {
             let response = String::from_utf8(out.stdout).unwrap();
-            let success = MergeSuccess::new(path.to_qualified_path());
-            (MergeStatistic::Success(success), response)
+            let status = if response.contains("Already up to date.") {
+                MergeStatistic::UpToDate(path.to_qualified_path())
+            } else {
+                MergeStatistic::Success(MergeSuccess::new(path.to_qualified_path()))
+            };
+            (status, response)
         } else {
             let response = String::from_utf8(out.stderr).unwrap();
             let conflict = MergeConflict::new(path.to_qualified_path());
             (MergeStatistic::Conflict(conflict), response)
         };
-        Ok(result)
+        let current = self.get_current_qualified_path()?;
+        let base = MergeStatistic::Base(current);
+        let mut chain = MergeChainStatistic::new();
+        chain.push(base);
+        chain.push(result.0);
+        Ok((chain, result.1))
     }
 
     pub fn abort_merge(&self) -> Result<String, GitError> {

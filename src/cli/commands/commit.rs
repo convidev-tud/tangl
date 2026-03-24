@@ -1,6 +1,9 @@
 use crate::cli::*;
 use crate::git::conflict::{ConflictChecker, MergeChainStatistics};
-use crate::model::{AnyHasBranch, CommitMetadataContainer, ConcreteFeature, ConcreteProduct, NodePath, NodePathTransformer, ToTypeNodePathTransformer};
+use crate::model::{
+    AnyHasBranch, ByTypeFilteringNodePathTransformer, CommitMetadataContainer, ConcreteFeature,
+    ConcreteProduct, NodePath, NodePathTransformer,
+};
 use crate::spl::{DerivationMetadata, DerivationState, InspectionManager};
 use clap::{Arg, Command};
 use colored::Colorize;
@@ -29,7 +32,7 @@ fn handle_feature(
             }
         })
         .collect();
-    let all_products = ToTypeNodePathTransformer::new()
+    let all_products = ByTypeFilteringNodePathTransformer::new()
         .transform(
             inspector
                 .find_products_containing_feature(&feature)?
@@ -84,12 +87,12 @@ fn handle_product(
             }
             _ => {}
         }
-        let new_pointer = DerivationMetadata::new(
-            Some(state.get_commit().get_hash().clone()),
-            None,
-        );
+        let new_pointer =
+            DerivationMetadata::new(Some(state.get_commit().get_hash().clone()), None);
         Ok(Some(CommitMetadataContainer::new(&new_pointer)?))
-    } else { Ok(None) }
+    } else {
+        Ok(None)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -110,11 +113,14 @@ impl CommandInterface for CommitCommand {
         let current = context.git.assert_current_node_path::<AnyHasBranch>()?;
         context.git.colored_output(true);
         let inspector = InspectionManager::new(&context.git);
-        let metadata: Option<CommitMetadataContainer> = if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
-            handle_feature(&feature, &inspector, &context)?
-        } else if let Some(product) = current.try_convert_to::<ConcreteProduct>() {
-            handle_product(&product, &inspector, &context)?
-        } else { None };
+        let metadata: Option<CommitMetadataContainer> =
+            if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
+                handle_feature(&feature, &inspector, &context)?
+            } else if let Some(product) = current.try_convert_to::<ConcreteProduct>() {
+                handle_product(&product, &inspector, &context)?
+            } else {
+                None
+            };
         let out = match maybe_message {
             Some(message) => context.git.commit(&message, metadata.as_ref())?,
             None => context.git.interactive_commit()?,

@@ -41,18 +41,21 @@ impl MergeConflict {
 pub enum MergeStatistic {
     Base(QualifiedPath),
     Success(MergeSuccess),
+    UpToDate(QualifiedPath),
     Conflict(MergeConflict),
     Merging(MergePending),
-    Skipped(QualifiedPath),
+    Aborted(QualifiedPath),
 }
 
 impl MergeStatistic {
     pub fn get_path(&self) -> &QualifiedPath {
         match self {
-            MergeStatistic::Base(path) | MergeStatistic::Skipped(path) => path,
-            MergeStatistic::Success(success) => &success.path,
-            MergeStatistic::Merging(pending) => &pending.path,
-            MergeStatistic::Conflict(conflict) => &conflict.path,
+            Self::Base(path) |
+            Self::Aborted(path) |
+            Self::UpToDate(path)=> path,
+            Self::Success(success) => &success.path,
+            Self::Merging(pending) => &pending.path,
+            Self::Conflict(conflict) => &conflict.path,
         }
     }
 }
@@ -60,21 +63,28 @@ impl MergeStatistic {
 impl Display for MergeStatistic {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value: String = match self {
-            Self::Base(path) => path.to_string().blue().to_string(),
+            Self::Base(path) => {
+                format!("{} {}",path.to_string().blue(), "(Base)")
+            },
             Self::Success(success) => {
-                format!("{} {}", success.path.to_string().green(), "(Ok)".green())
+                format!("{} {}", success.path.to_string().blue(), "(Ok)".green())
+            }
+            Self::UpToDate(path) => {
+                format!("{} {}", path.to_string().blue(), "(Up to date)".green())
             }
             Self::Conflict(conflict) => {
-                format!("{} {}", conflict.path.to_string().red(), "(Conflict)".red())
+                format!("{} {}", conflict.path.to_string().blue(), "(Conflict)".red())
             }
             Self::Merging(pending) => {
                 format!(
                     "{} {}",
-                    pending.path.to_string().yellow(),
+                    pending.path.to_string().blue(),
                     "(Merging)".yellow()
                 )
             }
-            Self::Skipped(path) => path.to_string().normal().strikethrough().to_string(),
+            Self::Aborted(path) => {
+                format!("{} {}", path.to_string().blue(), "(Aborted)".red())
+            },
         };
         f.write_str(value.as_str())
     }
@@ -316,17 +326,14 @@ impl<'a> ConflictChecker<'a> {
         let mut skip = false;
         for path in chain[1..].iter() {
             if skip {
-                chain_statistic.push(MergeStatistic::Skipped(path.to_qualified_path()));
+                chain_statistic.push(MergeStatistic::Aborted(path.to_qualified_path()));
             } else {
                 let (statistic, _) = self.interface.merge(path)?;
-                match &statistic {
-                    MergeStatistic::Conflict(_) => {
-                        self.interface.abort_merge()?;
-                        skip = true;
-                    }
-                    _ => {}
+                if statistic.contains_conflicts() {
+                    self.interface.abort_merge()?;
+                    skip = true;
                 }
-                chain_statistic.push(statistic);
+                chain_statistic.push(statistic.get(1).unwrap().clone());
             }
         }
         self.interface.checkout(&current_path)?;

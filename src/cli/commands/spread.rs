@@ -1,5 +1,7 @@
 use crate::cli::*;
+use crate::model::{AnyHasBranch, ByTypeFilteringNodePathTransformer, NodePathTransformer};
 use clap::Command;
+use colored::Colorize;
 use std::error::Error;
 
 #[derive(Clone, Debug)]
@@ -14,23 +16,25 @@ impl CommandDefinition for SpreadCommand {
 }
 
 impl CommandInterface for SpreadCommand {
-    fn run_command(&self, _context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
-        // let current_path = context.git.get_current_node_path()?;
-        // let current_branch = current_path.to_qualified_path();
-        // let merge_argument = vec![current_branch.clone()];
-        // for path in current_path.iter_children_req() {
-        //     let qualified_path = path.to_qualified_path();
-        //     match path.concretize() {
-        //         ConcreteNodePathType::Tag(_) => {}
-        //         _ => {
-        //             context.info(format!("Spreading to {}", qualified_path));
-        //             context.git.checkout(&qualified_path)?;
-        //             context.git.merge(&merge_argument)?;
-        //         }
-        //     }
-        // }
-        // context.git.checkout(&current_branch)?;
-        // context.info("Success");
+    fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
+        let current = context.git.assert_current_node_path::<AnyHasBranch>()?;
+        let type_filter = ByTypeFilteringNodePathTransformer::<_, AnyHasBranch>::new();
+        context.logger.info("Spreading commits to children");
+        for child in type_filter.transform(current.iter_children_req()) {
+            context.git.checkout(&child)?;
+            let (result, _) = context.git.merge(&current)?;
+            context.logger.info(result.display_as_path());
+            if result.contains_conflicts() {
+                return Err(format!(
+                    "Encountered conflict while spreading to {}\n\
+                        Fix all conflicts, then rerun the spread command from {}",
+                    child.to_string().blue(),
+                    current.to_string().blue(),
+                ).into())
+            }
+        }
+        context.git.checkout(&current)?;
+        context.logger.info("Spreading completed without conflicts");
         Ok(())
     }
 }
