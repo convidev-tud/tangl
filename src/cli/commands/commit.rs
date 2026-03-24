@@ -114,9 +114,7 @@ impl CommandInterface for CommitCommand {
         context.git.colored_output(true);
         let inspector = InspectionManager::new(&context.git);
         let metadata: Option<CommitMetadataContainer> =
-            if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
-                handle_feature(&feature, &inspector, &context)?
-            } else if let Some(product) = current.try_convert_to::<ConcreteProduct>() {
+            if let Some(product) = current.try_convert_to::<ConcreteProduct>() {
                 handle_product(&product, &inspector, &context)?
             } else {
                 None
@@ -126,6 +124,9 @@ impl CommandInterface for CommitCommand {
             None => context.git.interactive_commit()?,
         };
         context.logger.info(&out);
+        if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
+            handle_feature(&feature, &inspector, &context)?;
+        }
         Ok(())
     }
 }

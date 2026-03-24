@@ -56,12 +56,14 @@ impl CommandInterface for CheckoutCommand {
                 node_path.get_actual_type().get_formatted_name(),
                 node_path.to_string().blue(),
             ));
-            let rest = out.split("\n").collect::<Vec<&str>>()[1..]
-                .join("\n")
-                .trim()
-                .to_string();
-            context.logger.info(rest)
         }
+        let rest = out.split("\n")
+            .filter(|s| !s.contains("Switched") && !s.contains("Already"))
+            .collect::<Vec<&str>>()
+            .join("\n")
+            .trim()
+            .to_string();
+        context.logger.info(rest);
         Ok(())
     }
     fn shell_complete(
