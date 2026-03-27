@@ -1,6 +1,7 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::git::conflict::{MergeChainStatistic, MergeResult};
+use crate::git::conflict::{MergeChainStatistic, NormalizedMergeStatistic};
+use crate::git::interface::GitInterface;
 use crate::logging::TanglLogger;
 use crate::model::*;
 use crate::spl::*;
@@ -72,7 +73,7 @@ fn initialize_hint(
 ) -> Result<(), Box<dyn Error>> {
     match state {
         DerivationState::InProgress => {
-            let order: MergeChainStatistic = derivation_manager.get_pending_chain()?;
+            let order = derivation_manager.get_pending_chain()?.unwrap();
             logger.info("Derivation Preview\n");
             if optimize {
                 logger.info("Suggesting the following merge order:");
@@ -125,6 +126,7 @@ fn handle_initialize(
 fn handle_continue(
     derivation_manager: &mut DerivationManager,
     logger: &TanglLogger,
+    git: &GitInterface,
 ) -> Result<(), Box<dyn Error>> {
     let old = derivation_manager.get_current_state();
     let next = match derivation_manager.continue_derivation() {
@@ -138,7 +140,7 @@ fn handle_continue(
             };
         }
     };
-    let completed: Vec<MergeResult> = next
+    let completed: Vec<NormalizedMergeStatistic> = next
         .get_completed()
         .iter()
         .filter_map(|data| {
@@ -149,22 +151,22 @@ fn handle_continue(
             }
         })
         .collect();
-    let mut completed_chain = MergeChainStatistic::new();
-    completed_chain.push(MergeResult::Base(derivation_manager.get_product().to_normalized_path()));
-    completed_chain.fill(completed);
-    let still_missing: MergeChainStatistic = derivation_manager.get_pending_chain()?;
+    let mut completed_chain = MergeChainStatistic::<_, ConcreteFeature>::new(derivation_manager.get_product().clone());
+    completed_chain.fill_from_normalized(completed, git)?;
+    let still_missing = derivation_manager.get_pending_chain()?;
     logger.info(format!("Merged {} feature(s)", completed_chain.len() - 1));
     for complete in completed_chain.iter() {
         logger.info(format!("  {}", complete));
     }
-    if !still_missing.is_empty() {
+    if still_missing.is_some() {
+        let m = still_missing.unwrap();
         logger.info("\nEncountered conflicts while merging");
         logger.info(conflict_hint());
         logger.info(format!(
             "\n{} feature(s) remain(s)",
-            still_missing.get_chain().len() - 1
+            m.get_n_merges()
         ));
-        for info in still_missing.display_as_list() {
+        for info in m.display_as_list() {
             logger.info(format!("  {}", info));
         }
     } else {
@@ -266,7 +268,7 @@ impl CommandInterface for DeriveCommand {
             .unwrap();
         let file_path = context.arg_helper.get_argument_value::<String>(FROM_FILE);
 
-        let features = context.git.get_model().assert_all(&all_feature_paths)?;
+        let features = context.git.assert_paths(&all_feature_paths)?;
         let mut derivation_manager =
             DerivationManager::new(&product_path, &context.git, &context.logger)?;
 
@@ -284,7 +286,7 @@ impl CommandInterface for DeriveCommand {
         } else if !features.is_empty() {
             handle_initialize(features, optimize, &mut derivation_manager, &context.logger)?;
         } else if continue_derivation {
-            handle_continue(&mut derivation_manager, &context.logger)?;
+            handle_continue(&mut derivation_manager, &context.logger, &context.git)?;
         } else if update {
             handle_update(optimize, &mut derivation_manager, &context.logger)?;
         } else if let Some(file_path) = file_path {
@@ -298,7 +300,7 @@ impl CommandInterface for DeriveCommand {
                 .into_iter()
                 .map(|p| feature_root.clone() + p)
                 .collect();
-            let features = context.git.get_model().assert_all::<Feature>(&paths)?;
+            let features = context.git.assert_paths::<Feature>(&paths)?;
             let transformer = ByTypeFilteringNodePathTransformer::<_, ConcreteFeature>::new();
             let node_paths = transformer.transform(features.into_iter()).collect();
             handle_initialize(
@@ -337,7 +339,7 @@ impl CommandInterface for DeriveCommand {
                         &to_filter,
                         FilteringMode::EXCLUDE,
                     )?;
-                    completion_helper.complete_qualified_paths(
+                    completion_helper.complete_normalized_paths(
                         feature_root.to_normalized_path(),
                         transformer
                             .transform(feature_root.iter_children_req())

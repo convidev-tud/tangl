@@ -134,7 +134,7 @@ impl<'a> CompletionHelper<'a> {
         let currently_editing = maybe_currently_editing.unwrap().1;
         self.get_appendix_of(currently_editing.get_id().as_str())
     }
-    pub fn complete_qualified_paths(
+    pub fn complete_normalized_paths(
         &self,
         reference: NormalizedPath,
         paths: impl Iterator<Item = NormalizedPath>,

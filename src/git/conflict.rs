@@ -1,14 +1,15 @@
-use crate::git::error::InvalidPathError;
+use crate::git::error::PathAssertionError;
 use crate::git::interface::GitInterface;
 use crate::logging::TanglLogger;
-use crate::model::{AnyGitObject, IsGitObject, NodePath, NormalizedPath, ToNormalizedPath};
+use crate::model::{
+    AnyGitObject, IsGitObject, NodePath, NormalizedPath, ToNormalizedPath, ToNormalizedPaths,
+};
 use colored::Colorize;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MergeResult {
@@ -52,6 +53,12 @@ impl NormalizedMergeStatistic {
     }
 }
 
+impl ToNormalizedPaths for Vec<NormalizedMergeStatistic> {
+    fn to_normalized_paths(&self) -> Vec<NormalizedPath> {
+        self.iter().map(|s| s.get_path().clone()).collect()
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct MergeStatistic<T: IsGitObject> {
     path: NodePath<T>,
@@ -62,7 +69,10 @@ impl<T: IsGitObject> MergeStatistic<T> {
     pub fn new(path: NodePath<T>, stat: MergeResult) -> Self {
         Self { path, stat }
     }
-    pub fn from_normalized(stat: NormalizedMergeStatistic, git: &GitInterface) -> Result<Self, InvalidPathError> {
+    pub fn from_normalized(
+        stat: NormalizedMergeStatistic,
+        git: &GitInterface,
+    ) -> Result<Self, PathAssertionError> {
         let path = git.assert_path::<T>(stat.get_path())?;
         Ok(Self::new(path, stat.get_stat().clone()))
     }
@@ -129,11 +139,18 @@ impl<B: IsGitObject, C: IsGitObject> MergeChainStatistic<B, C> {
             self.chain.push(stat)
         }
     }
-    pub fn fill_from_normalized(&mut self, stats: Vec<NormalizedMergeStatistic>, git: &GitInterface) -> Result<(), InvalidPathError> {
+    pub fn fill_from_normalized(
+        &mut self,
+        stats: Vec<NormalizedMergeStatistic>,
+        git: &GitInterface,
+    ) -> Result<(), PathAssertionError> {
         for stat in stats {
             self.push(MergeStatistic::from_normalized(stat, git)?)
-        };
+        }
         Ok(())
+    }
+    pub fn to_normalized(&self) -> Vec<NormalizedMergeStatistic> {
+        self.iter().map(|s| s.to_normalized()).collect()
     }
     pub fn insert(&mut self, index: usize, stat: MergeStatistic<C>) {
         self.add_to_internal_counters(&stat);
@@ -199,7 +216,6 @@ impl<B: IsGitObject, C: IsGitObject> MergeChainStatistic<B, C> {
     }
 }
 
-
 pub struct MergeChainStatistics<B: IsGitObject, T: IsGitObject> {
     statistics: Vec<MergeChainStatistic<B, T>>,
     total_successes: usize,
@@ -238,7 +254,9 @@ impl<B: IsGitObject, T: IsGitObject> MergeChainStatistics<B, T> {
     }
 }
 
-impl<B: IsGitObject, T: IsGitObject> FromIterator<MergeChainStatistic<B, T>> for MergeChainStatistics<B, T> {
+impl<B: IsGitObject, T: IsGitObject> FromIterator<MergeChainStatistic<B, T>>
+    for MergeChainStatistics<B, T>
+{
     fn from_iter<I: IntoIterator<Item = MergeChainStatistic<B, T>>>(iter: I) -> Self {
         let mut new = Self::new();
         new.fill_from_iter(iter.into_iter());
@@ -254,16 +272,14 @@ pub enum MergeStatisticWeight {
 impl MergeStatisticWeight {
     pub fn get_weight(&self, statistic: &MergeResult) -> i32 {
         match self {
-            Self::Simple => {
-                match statistic {
-                    MergeResult::Base => 0,
-                    MergeResult::UpToDate => 1,
-                    MergeResult::Success => 0,
-                    MergeResult::Conflict => -1,
-                    MergeResult::Merging => 0,
-                    MergeResult::Aborted => -10,
-                }
-            }
+            Self::Simple => match statistic {
+                MergeResult::Base => 0,
+                MergeResult::UpToDate => 1,
+                MergeResult::Success => 0,
+                MergeResult::Conflict => -1,
+                MergeResult::Merging => 0,
+                MergeResult::Aborted => -10,
+            },
         }
     }
 }
@@ -290,7 +306,10 @@ impl<T: IsGitObject> Ord for MergeStatistics<T> {
 
 impl<T: IsGitObject> MergeStatistics<T> {
     pub fn new(weights: MergeStatisticWeight) -> Self {
-        Self { statistics: vec![], weights }
+        Self {
+            statistics: vec![],
+            weights,
+        }
     }
     pub fn push(&mut self, statistic: MergeStatistic<T>) {
         self.statistics.push(statistic);
@@ -299,13 +318,18 @@ impl<T: IsGitObject> MergeStatistics<T> {
         let mut sum = 0;
         for s in &self.statistics {
             sum += self.weights.get_weight(s.get_stat())
-        };
+        }
         sum
     }
     pub fn get_lowest(&self) -> &MergeStatistic<T> {
-        self.statistics.iter().min_by(|a, b| {
-            self.weights.get_weight(a.get_stat()).cmp(&self.weights.get_weight(b.get_stat()))
-        }).unwrap()
+        self.statistics
+            .iter()
+            .min_by(|a, b| {
+                self.weights
+                    .get_weight(a.get_stat())
+                    .cmp(&self.weights.get_weight(b.get_stat()))
+            })
+            .unwrap()
     }
 }
 
@@ -323,14 +347,11 @@ impl<'a> ConflictChecker<'a> {
         &self,
         paths: &Vec<NodePath<T>>,
         k: usize,
-    ) -> impl Iterator<Item = Result<MergeChainStatistic<T, T>, InvalidPathError>> {
-        let iterator = paths
-            .iter()
-            .permutations(k)
-            .map(|perm| {
-                let base = perm[0];
-                self.check_chain(&base, &perm[1..].to_vec())
-            });
+    ) -> impl Iterator<Item = Result<MergeChainStatistic<T, T>, PathAssertionError>> {
+        let iterator = paths.iter().permutations(k).map(|perm| {
+            let base = perm[0];
+            self.check_chain(&base, &perm[1..].to_vec())
+        });
         iterator
     }
 
@@ -339,17 +360,18 @@ impl<'a> ConflictChecker<'a> {
         targets: &Vec<NodePath<T>>,
         base: &NodePath<B>,
         k: usize,
-    ) -> impl Iterator<Item = Result<MergeChainStatistic<B, T>, InvalidPathError>> {
-        let iterator = targets.iter().permutations(k).map(|target| {
-            self.check_chain(base, &target)
-        });
+    ) -> impl Iterator<Item = Result<MergeChainStatistic<B, T>, PathAssertionError>> {
+        let iterator = targets
+            .iter()
+            .permutations(k)
+            .map(|target| self.check_chain(base, &target));
         iterator
     }
 
     pub fn check_by_order<T: IsGitObject>(
         &self,
         paths: &Vec<NodePath<T>>,
-    ) -> Result<MergeChainStatistic<T, T>, InvalidPathError> {
+    ) -> Result<MergeChainStatistic<T, T>, PathAssertionError> {
         let chain: Vec<&NodePath<T>> = paths.iter().collect();
         let base = chain[0];
         self.check_chain(base, &chain[1..].to_vec())
@@ -360,7 +382,7 @@ impl<'a> ConflictChecker<'a> {
         n: &'a Vec<NodePath<T>>,
         against: &'a Vec<NodePath<T>>,
         k: &'a usize,
-    ) -> impl Iterator<Item = Result<MergeChainStatistic<T, T>, InvalidPathError>> {
+    ) -> impl Iterator<Item = Result<MergeChainStatistic<T, T>, PathAssertionError>> {
         // I don't know why, but k has to be borrowed here
         let iterator = n
             .iter()
@@ -394,14 +416,12 @@ impl<'a> ConflictChecker<'a> {
         &self,
         base: &NodePath<B>,
         chain: &Vec<&NodePath<C>>,
-    ) -> Result<MergeChainStatistic<B, C>, InvalidPathError> {
+    ) -> Result<MergeChainStatistic<B, C>, PathAssertionError> {
         if chain.len() < 1 {
             panic!("Chain has to contain at least 1 path")
         }
         let mut chain_statistic = MergeChainStatistic::new(base.clone());
-        let current_path = self
-            .interface
-            .assert_current_node_path::<AnyGitObject>()?;
+        let current_path = self.interface.assert_current_node_path::<AnyGitObject>()?;
         self.interface.checkout(base)?;
         let temporary = NormalizedPath::from("tmp");
         self.interface.create_branch_no_mut(&temporary)?;
@@ -426,14 +446,19 @@ impl<'a> ConflictChecker<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Conflict2DMatrix<T: IsGitObject> {
-    matrix: HashMap<NodePath<T>, HashMap<NodePath<T>, MergeStatistic<T>>>,
+pub struct Conflict2DMatrix {
+    matrix: HashMap<
+        NodePath<AnyGitObject>,
+        HashMap<NodePath<AnyGitObject>, MergeStatistic<AnyGitObject>>,
+    >,
 }
 
-impl<T: IsGitObject> Conflict2DMatrix<T> {
-    pub fn new(statistics: &MergeChainStatistics<T, T>) -> Self {
-        let mut matrix: HashMap<NodePath<T>, HashMap<NodePath<T>, MergeStatistic<T>>> =
-            HashMap::new();
+impl Conflict2DMatrix {
+    pub fn new(statistics: &MergeChainStatistics<AnyGitObject, AnyGitObject>) -> Self {
+        let mut matrix: HashMap<
+            NodePath<AnyGitObject>,
+            HashMap<NodePath<AnyGitObject>, MergeStatistic<AnyGitObject>>,
+        > = HashMap::new();
         for chain in statistics.iter_all() {
             if chain.len() > 2 {
                 panic!("Matrix only supports 2 dimensions")
@@ -451,19 +476,30 @@ impl<T: IsGitObject> Conflict2DMatrix<T> {
         Self { matrix }
     }
 
-    pub fn predict_conflicts<B: IsGitObject>(&self, base: &NodePath<B>, order: &Vec<NodePath<T>>) -> Option<MergeChainStatistic<B, T>> {
-        let mut final_path = vec![(base.try_convert_to()?, MergeStatistics::new(MergeStatisticWeight::Simple))];
+    pub fn predict_conflicts<B: IsGitObject, C: IsGitObject>(
+        &self,
+        base: &NodePath<B>,
+        order: &Vec<NodePath<C>>,
+    ) -> Option<MergeChainStatistic<B, C>> {
+        let mut final_path = vec![(
+            base.try_convert_to()?,
+            MergeStatistics::new(MergeStatisticWeight::Simple),
+        )];
         for path in order[1..].iter() {
+            let converted = path.try_convert_to()?;
             let voters = final_path.iter().map(|(k, _)| k.clone()).collect();
-            let votes = self.calculate_votes(&voters, &vec![path.clone()]);
-            let vote = votes.get(&path).unwrap();
-            final_path.push((path.clone(), vote.clone()));
+            let votes = self.calculate_votes(&voters, &vec![converted.clone()]);
+            let vote = votes.get(&converted).unwrap();
+            final_path.push((converted, vote.clone()));
         }
         self.statistics_from_votes(&final_path)
     }
 
-    pub fn estimate_best_path<B: IsGitObject>(&self, base_path: &NodePath<B>) -> Option<MergeChainStatistic<B, T>> {
-        let mut missing: Vec<NodePath<T>> = self.matrix.keys().cloned().collect();
+    pub fn estimate_best_path<B: IsGitObject, C: IsGitObject>(
+        &self,
+        base_path: &NodePath<B>,
+    ) -> Option<MergeChainStatistic<B, C>> {
+        let mut missing: Vec<NodePath<AnyGitObject>> = self.matrix.keys().cloned().collect();
         let start = base_path.try_convert_to()?;
         missing.retain(|k| k != &start);
         let mut final_path = vec![(start, MergeStatistics::new(MergeStatisticWeight::Simple))];
@@ -504,25 +540,30 @@ impl<T: IsGitObject> Conflict2DMatrix<T> {
 
     fn calculate_forward_compatibility(
         &self,
-        element: &NodePath<T>,
-        missing: &Vec<NodePath<T>>,
-    ) -> MergeStatistics<T> {
+        element: &NodePath<AnyGitObject>,
+        missing: &Vec<NodePath<AnyGitObject>>,
+    ) -> MergeStatistics<AnyGitObject> {
         let table = &self.matrix[element];
         let mut statistics = MergeStatistics::new(MergeStatisticWeight::Simple);
-        for statistic in table
-            .iter()
-            .filter_map(|(k, v)| if missing.contains(k) { Some(v.clone()) } else { None }) {
+        for statistic in table.iter().filter_map(|(k, v)| {
+            if missing.contains(k) {
+                Some(v.clone())
+            } else {
+                None
+            }
+        }) {
             statistics.push(statistic)
-        };
+        }
         statistics
     }
 
     fn calculate_votes(
         &self,
-        voters: &Vec<NodePath<T>>,
-        targets: &Vec<NodePath<T>>,
-    ) -> HashMap<NodePath<T>, MergeStatistics<T>> {
-        let mut votes: HashMap<NodePath<T>, MergeStatistics<T>> = HashMap::new();
+        voters: &Vec<NodePath<AnyGitObject>>,
+        targets: &Vec<NodePath<AnyGitObject>>,
+    ) -> HashMap<NodePath<AnyGitObject>, MergeStatistics<AnyGitObject>> {
+        let mut votes: HashMap<NodePath<AnyGitObject>, MergeStatistics<AnyGitObject>> =
+            HashMap::new();
         for candidate in targets.iter() {
             let mut statistics = MergeStatistics::new(MergeStatisticWeight::Simple);
             for p in voters.iter() {
@@ -534,8 +575,11 @@ impl<T: IsGitObject> Conflict2DMatrix<T> {
         votes
     }
 
-    fn reverse_votes(votes: HashMap<NodePath<T>, MergeStatistics<T>>) -> HashMap<MergeStatistics<T>, Vec<NodePath<T>>> {
-        let mut reversed: HashMap<MergeStatistics<T>, Vec<NodePath<T>>> = HashMap::new();
+    fn reverse_votes(
+        votes: HashMap<NodePath<AnyGitObject>, MergeStatistics<AnyGitObject>>,
+    ) -> HashMap<MergeStatistics<AnyGitObject>, Vec<NodePath<AnyGitObject>>> {
+        let mut reversed: HashMap<MergeStatistics<AnyGitObject>, Vec<NodePath<AnyGitObject>>> =
+            HashMap::new();
         for (path, vote) in votes.iter() {
             if reversed.contains_key(vote) {
                 reversed.get_mut(vote).unwrap().push(path.clone());
@@ -546,11 +590,18 @@ impl<T: IsGitObject> Conflict2DMatrix<T> {
         reversed
     }
 
-    fn statistics_from_votes<B: IsGitObject>(&self, votes: &Vec<(NodePath<T>, MergeStatistics<T>)>) -> Option<MergeChainStatistic<B, T>> {
+    fn statistics_from_votes<B: IsGitObject, C: IsGitObject>(
+        &self,
+        votes: &Vec<(NodePath<AnyGitObject>, MergeStatistics<AnyGitObject>)>,
+    ) -> Option<MergeChainStatistic<B, C>> {
         let mut chain_statistic = MergeChainStatistic::new(votes[0].0.try_convert_to()?);
         for (index, (_, vote)) in votes.iter().enumerate() {
             if index != 0 {
-                chain_statistic.push(vote.get_lowest().clone());
+                let lowest = vote.get_lowest();
+                chain_statistic.push(MergeStatistic::new(
+                    lowest.get_path().try_convert_to()?,
+                    lowest.get_stat().clone(),
+                ));
             };
         }
         Some(chain_statistic)
@@ -567,29 +618,37 @@ impl<'a> ConflictAnalyzer<'a> {
         Self { checker, logger }
     }
 
-    pub fn calculate_2d_heuristics_matrix_with_merge_base<C: IsGitObject>(
+    pub fn calculate_2d_heuristics_matrix_with_merge_base(
         &mut self,
-        paths: &Vec<NodePath<C>>,
-        base: &NodePath<C>,
-    ) -> Result<Conflict2DMatrix<C>, InvalidPathError> {
+        paths: &Vec<NodePath<AnyGitObject>>,
+        base: &NodePath<AnyGitObject>,
+    ) -> Result<Conflict2DMatrix, PathAssertionError> {
         let mut statistics = MergeChainStatistics::new();
 
-        let mut conflicting_with_base: Vec<NodePath<C>> = vec![];
+        let mut conflicting_with_base: Vec<NodePath<AnyGitObject>> = vec![];
         self.logger.debug("Checking against base pairwise");
         for s in self.checker.check_permutations_against_base(paths, base, 1) {
             let result = s?;
             self.logger.debug(result.display_as_path());
             statistics.push(result.clone());
             if result.contains_conflicts() {
-                conflicting_with_base.push(result.get_chain().get(1).unwrap().get_path().clone());
+                conflicting_with_base.push(
+                    result
+                        .get_chain()
+                        .get(1)
+                        .unwrap()
+                        .get_path()
+                        .try_convert_to()
+                        .unwrap(),
+                );
             }
         }
-        let to_test_with_base: Vec<NodePath<C>> = paths
+        let to_test_with_base: Vec<NodePath<AnyGitObject>> = paths
             .iter()
             .filter(|path| !conflicting_with_base.contains(&path))
             .cloned()
             .collect();
-        let _to_test_without_base: Vec<NodePath<C>> = paths
+        let _to_test_without_base: Vec<NodePath<AnyGitObject>> = paths
             .iter()
             .filter(|path| conflicting_with_base.contains(&path))
             .cloned()

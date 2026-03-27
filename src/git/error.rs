@@ -19,22 +19,6 @@ impl Display for GitCommandError {
 }
 impl Error for GitCommandError {}
 
-#[derive(Debug, Clone)]
-pub struct InvalidVersionError {
-    msg: String,
-}
-impl InvalidVersionError {
-    pub fn new<S: Into<String>>(msg: S) -> GitCommandError {
-        GitCommandError { msg: msg.into() }
-    }
-}
-impl Display for InvalidVersionError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.msg)
-    }
-}
-impl Error for InvalidVersionError {}
-
 #[derive(Debug)]
 pub enum GitError {
     Io(io::Error),
@@ -57,46 +41,6 @@ impl From<io::Error> for GitError {
 impl From<GitCommandError> for GitError {
     fn from(value: GitCommandError) -> Self {
         GitError::Git(value)
-    }
-}
-
-#[derive(Debug)]
-pub enum GitWrongNodeTypeError {
-    Io(io::Error),
-    Git(GitCommandError),
-    WrongNodeType(WrongNodeTypeError),
-}
-impl Display for GitWrongNodeTypeError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Git(err) => err.fmt(f),
-            Self::WrongNodeType(err) => err.fmt(f),
-            Self::Io(err) => err.fmt(f),
-        }
-    }
-}
-impl Error for GitWrongNodeTypeError {}
-impl From<GitCommandError> for GitWrongNodeTypeError {
-    fn from(err: GitCommandError) -> Self {
-        Self::Git(err)
-    }
-}
-impl From<WrongNodeTypeError> for GitWrongNodeTypeError {
-    fn from(err: WrongNodeTypeError) -> Self {
-        Self::WrongNodeType(err)
-    }
-}
-impl From<io::Error> for GitWrongNodeTypeError {
-    fn from(err: io::Error) -> Self {
-        Self::Io(err)
-    }
-}
-impl From<GitError> for GitWrongNodeTypeError {
-    fn from(err: GitError) -> Self {
-        match err {
-            GitError::Io(err) => Self::Io(err),
-            GitError::Git(err) => Self::Git(err),
-        }
     }
 }
 
@@ -157,8 +101,7 @@ impl From<GitError> for GitModelError {
 
 #[derive(Debug)]
 pub enum GitSerdeError {
-    Io(io::Error),
-    Git(GitCommandError),
+    Git(GitError),
     Serde(serde_json::Error),
 }
 impl Display for GitSerdeError {
@@ -166,13 +109,12 @@ impl Display for GitSerdeError {
         match self {
             Self::Git(err) => err.fmt(f),
             Self::Serde(err) => err.fmt(f),
-            Self::Io(err) => err.fmt(f),
         }
     }
 }
 impl Error for GitSerdeError {}
-impl From<GitCommandError> for GitSerdeError {
-    fn from(err: GitCommandError) -> Self {
+impl From<GitError> for GitSerdeError {
+    fn from(err: GitError) -> Self {
         Self::Git(err)
     }
 }
@@ -183,31 +125,35 @@ impl From<serde_json::Error> for GitSerdeError {
 }
 impl From<io::Error> for GitSerdeError {
     fn from(err: io::Error) -> Self {
-        Self::Io(err)
-    }
-}
-impl From<GitError> for GitSerdeError {
-    fn from(err: GitError) -> Self {
-        match err {
-            GitError::Io(err) => Self::Io(err),
-            GitError::Git(err) => Self::Git(err),
-        }
+        Self::Git(err.into())
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct InvalidVersionError {
+    msg: String,
+}
+impl InvalidVersionError {
+    pub fn new<S: Into<String>>(msg: S) -> GitCommandError {
+        GitCommandError { msg: msg.into() }
+    }
+}
+impl Display for InvalidVersionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+impl Error for InvalidVersionError {}
+
 #[derive(Debug)]
 pub enum InvalidPathError {
-    Io(io::Error),
-    Git(GitCommandError),
     PathNotFound(PathNotFoundError),
     WrongNodeType(WrongNodeTypeError),
-    InvalidVersion(InvalidVersionError)
+    InvalidVersion(InvalidVersionError),
 }
 impl Display for InvalidPathError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Git(err) => err.fmt(f),
-            Self::Io(err) => err.fmt(f),
             Self::PathNotFound(err) => err.fmt(f),
             Self::WrongNodeType(err) => err.fmt(f),
             Self::InvalidVersion(err) => err.fmt(f),
@@ -215,14 +161,6 @@ impl Display for InvalidPathError {
     }
 }
 impl Error for InvalidPathError {}
-impl From<GitError> for InvalidPathError {
-    fn from(err: GitError) -> Self {
-        match err {
-            GitError::Io(err) => Self::Io(err),
-            GitError::Git(err) => Self::Git(err),
-        }
-    }
-}
 impl From<ModelError> for InvalidPathError {
     fn from(err: ModelError) -> Self {
         match err {
@@ -231,8 +169,66 @@ impl From<ModelError> for InvalidPathError {
         }
     }
 }
+impl From<PathNotFoundError> for InvalidPathError {
+    fn from(value: PathNotFoundError) -> Self {
+        Self::PathNotFound(value)
+    }
+}
+impl From<WrongNodeTypeError> for InvalidPathError {
+    fn from(value: WrongNodeTypeError) -> Self {
+        Self::WrongNodeType(value)
+    }
+}
 impl From<InvalidVersionError> for InvalidPathError {
     fn from(value: InvalidVersionError) -> Self {
         Self::InvalidVersion(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum PathAssertionError {
+    Git(GitError),
+    InvalidPath(InvalidPathError),
+}
+impl Error for PathAssertionError {}
+impl Display for PathAssertionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Git(err) => err.fmt(f),
+            Self::InvalidPath(err) => err.fmt(f),
+        }
+    }
+}
+impl From<GitError> for PathAssertionError {
+    fn from(err: GitError) -> Self {
+        Self::Git(err)
+    }
+}
+impl From<ModelError> for PathAssertionError {
+    fn from(err: ModelError) -> Self {
+        match err {
+            ModelError::PathNotFound(err) => Self::InvalidPath(err.into()),
+            ModelError::WrongNodeType(err) => Self::InvalidPath(err.into()),
+        }
+    }
+}
+impl From<InvalidVersionError> for PathAssertionError {
+    fn from(value: InvalidVersionError) -> Self {
+        Self::InvalidPath(value.into())
+    }
+}
+impl From<PathNotFoundError> for PathAssertionError {
+    fn from(value: PathNotFoundError) -> Self {
+        Self::InvalidPath(value.into())
+    }
+}
+impl From<WrongNodeTypeError> for PathAssertionError {
+    fn from(value: WrongNodeTypeError) -> Self {
+        Self::InvalidPath(value.into())
+    }
+}
+impl From<io::Error> for PathAssertionError {
+    fn from(value: io::Error) -> Self {
+        Self::Git(value.into())
     }
 }

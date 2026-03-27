@@ -38,7 +38,7 @@ pub fn delete_path<T: IsGitObject>(
     path: &NormalizedPath,
     context: &mut CommandContext,
 ) -> Result<(), Box<dyn Error>> {
-    match context.git.get_model().assert_path::<T>(&path) {
+    match context.git.assert_path::<T>(&path) {
         Ok(concrete_path) => {
             let concrete_type = concrete_path.get_actual_type().clone();
             context.git.delete_branch(concrete_path)?;

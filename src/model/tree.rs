@@ -25,7 +25,7 @@ impl TreeDataModel {
         }
     }
     pub fn insert_git_branch<S1: Into<String>, S2: Into<String>>(
-        &mut self, 
+        &mut self,
         path: S1,
         head: S2,
     ) -> NodeType {
@@ -43,16 +43,14 @@ impl TreeDataModel {
         }
         node_type
     }
-    pub fn insert_tag<S: Into<String>>(
-        &mut self,
-        path: S,
-    ) {
+    pub fn insert_tag<S: Into<String>>(&mut self, path: S) {
         let path = path.into();
         let normalized_path = path.to_normalized_path();
         let tag = CommitTag::new(path);
-        Rc::get_mut(&mut self.virtual_root)
-            .unwrap()
-            .insert_path(&normalized_path.strip_n_right(normalized_path.len()-1), PayloadType::Tag(tag));
+        Rc::get_mut(&mut self.virtual_root).unwrap().insert_path(
+            &normalized_path.strip_n_right(normalized_path.len() - 1),
+            PayloadType::Tag(tag),
+        );
     }
     pub fn get_area(&self, path: &NormalizedPath) -> Option<NodePath<ConcreteArea>> {
         self.get_virtual_root().move_to_area(path)

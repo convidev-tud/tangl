@@ -40,7 +40,7 @@ impl<'a> InspectionManager<'a> {
                             Ok(next_commit) => get_last_commit(&next_commit, git),
                             Err(error) => {
                                 match error {
-                                    GitError::Git(_) => Err(format!("fatal: derivation metadata of commit {} points to commit {} which does not exist", commit.get_hash(), pointer).into()),
+                                    GitError::Git(_) => Err(format!("fatal: derivation metadata of commit {} points to commit {} which does not exist", commit.get_hash().get_full_hash(), pointer.get_full_hash()).into()),
                                     GitError::Io(e) => Err(e.into())
                                 }
                             }
@@ -49,7 +49,7 @@ impl<'a> InspectionManager<'a> {
                 }
                 _ => Err(format!(
                     "fatal: commit {} contains multiple derivation metadata",
-                    commit.get_hash()
+                    commit.get_hash().get_full_hash()
                 )
                 .into()),
             }

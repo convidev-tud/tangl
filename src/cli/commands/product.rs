@@ -88,7 +88,7 @@ impl CommandInterface for ProductCommand {
                 "delete" => {
                     let maybe_feature_root = context.git.get_current_area()?.move_to_product_root();
                     match maybe_feature_root {
-                        Some(path) => completion_helper.complete_qualified_paths(
+                        Some(path) => completion_helper.complete_normalized_paths(
                             path.to_normalized_path(),
                             HasBranchFilteringNodePathTransformer::new(true)
                                 .transform(path.iter_children_req())

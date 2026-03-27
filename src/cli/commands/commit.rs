@@ -1,9 +1,8 @@
 use crate::cli::*;
-use crate::git::conflict::{ConflictChecker, MergeChainStatistic, MergeChainStatistics};
-use crate::git::error::GitError;
+use crate::git::conflict::{ConflictChecker, MergeChainStatistics};
 use crate::model::{
-    AnyGitObject, ByTypeFilteringNodePathTransformer, CommitMetadataContainer, ConcreteFeature,
-    ConcreteProduct, NodePath, NodePathTransformer,
+    AnyGitObject, CommitMetadataContainer, ConcreteFeature,
+    ConcreteProduct, NodePath,
 };
 use crate::spl::{DerivationMetadata, DerivationState, InspectionManager};
 use clap::{Arg, Command};
@@ -18,31 +17,24 @@ fn handle_feature(
     context: &CommandContext,
 ) -> Result<Option<CommitMetadataContainer>, Box<dyn Error>> {
     let checker = ConflictChecker::new(&context.git);
-    let n = feature.try_convert_to::<AnyGitObject>().unwrap();
     let area = context.git.get_current_area()?;
-    let all_features: Vec<NodePath<AnyGitObject>> = area
+    let all_features: Vec<NodePath<ConcreteFeature>> = area
         .clone()
         .move_to_feature_root()
         .unwrap()
         .iter_features_req()
-        .filter_map(|feature| {
-            if feature != n {
-                feature.try_convert_to::<AnyGitObject>()
+        .filter_map(|f| {
+            if &f != feature {
+                f.try_convert_to()
             } else {
                 None
             }
         })
         .collect();
-    let all_products: Vec<NodePath<AnyGitObject>> = ByTypeFilteringNodePathTransformer::new()
-        .transform(
-            inspector
-                .find_products_containing_feature(&feature)?
-                .into_iter(),
-        )
-        .collect();
+    let all_products = inspector.find_products_containing_feature(&feature)?;
 
-    let feature_statistics: MergeChainStatistics = checker
-        .check_n_against_permutations(&vec![n.clone()], &all_features, &1)
+    let feature_statistics: MergeChainStatistics<ConcreteFeature, ConcreteFeature> = checker
+        .check_n_against_permutations(&vec![feature.clone()], &all_features, &1)
         .collect::<Result<_, _>>()?;
 
     if feature_statistics.n_conflicts() > 0 {
@@ -59,12 +51,12 @@ fn handle_feature(
         }
     }
 
-    let product_statistics: MergeChainStatistics = all_products
+    let product_statistics: MergeChainStatistics<ConcreteProduct, ConcreteFeature> = all_products
         .iter()
         .map(|product| {
             checker
-                .check_permutations_against_base(&vec![n.clone()], product, 1)
-                .collect::<Vec<Result<MergeChainStatistic, GitError>>>()
+                .check_permutations_against_base(&vec![feature.clone()], product, 1)
+                .collect::<Vec<Result<_, _>>>()
         })
         .flatten()
         .collect::<Result<_, _>>()?;

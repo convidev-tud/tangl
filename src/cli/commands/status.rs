@@ -49,7 +49,7 @@ impl CommandInterface for StatusCommand {
                     if !state.get_missing().is_empty() {
                         let manager =
                             DerivationManager::new(&product, &context.git, &context.logger)?;
-                        let missing = manager.get_pending_chain()?;
+                        let missing = manager.get_pending_chain()?.unwrap();
                         context.logger.info("\nFeatures remaining:");
                         for info in missing.display_as_list() {
                             context.logger.info(format!("  {info}"))

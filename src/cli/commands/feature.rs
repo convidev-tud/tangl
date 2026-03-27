@@ -103,7 +103,7 @@ impl CommandInterface for FeatureCommand {
                         } else {
                             feature_root.to_normalized_path()
                         };
-                    completion_helper.complete_qualified_paths(
+                    completion_helper.complete_normalized_paths(
                         reference,
                         HasBranchFilteringNodePathTransformer::new(true)
                             .transform(feature_root.iter_children_req())

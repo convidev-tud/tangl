@@ -78,9 +78,9 @@ impl PartialEq for Commit {
 }
 
 impl Commit {
-    pub fn new<S1: Into<String>, S2: Into<String>>(hash: S1, message: S2) -> Self {
+    pub fn new<S: Into<String>>(hash: CommitHash, message: S) -> Self {
         Self {
-            hash: CommitHash::new(hash.into()),
+            hash,
             message: message.into(),
         }
     }
@@ -125,8 +125,8 @@ impl<'a> Iterator for CommitIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_position < self.hashes.len() {
-            let hash = self.hashes.get(self.current_position).unwrap();
-            let commit = self.git.get_commit_from_hash(hash);
+            let hash = CommitHash::new(self.hashes.get(self.current_position).unwrap());
+            let commit = self.git.get_commit_from_hash(&hash);
             self.current_position += 1;
             match commit {
                 Ok(commit) => Some(Ok(commit)),

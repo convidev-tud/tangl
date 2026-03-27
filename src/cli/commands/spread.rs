@@ -22,7 +22,7 @@ impl CommandInterface for SpreadCommand {
         context.logger.info("Spreading commits to children");
         for child in type_filter.transform(current.iter_children_req()) {
             context.git.checkout(&child)?;
-            let (result, _) = context.git.merge(&current)?;
+            let (result, _) = context.git.merge::<AnyGitObject, _>(current.clone())?;
             context.logger.info(result.display_as_path());
             if result.contains_conflicts() {
                 return Err(format!(

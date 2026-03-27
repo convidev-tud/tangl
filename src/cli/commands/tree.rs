@@ -31,7 +31,7 @@ impl CommandDefinition for LSCommand {
 
 impl CommandInterface for LSCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
-        let current = context.git.get_current_qualified_path()?;
+        let current = context.git.get_current_normalized_path()?;
         let mut target = current
             + context
                 .arg_helper
@@ -46,7 +46,7 @@ impl CommandInterface for LSCommand {
             .get_argument_value::<bool>(SHOW_TAGS)
             .unwrap();
         let tree = context.arg_helper.get_argument_value::<bool>(TREE).unwrap();
-        let node_path = context.git.get_model().assert_path::<AnyNode>(&target)?;
+        let node_path = context.git.assert_path::<AnyNode>(&target)?;
         match tree {
             true => {
                 let tree = node_path.display_tree(show_tags);
@@ -77,9 +77,9 @@ impl CommandInterface for LSCommand {
         let completion: Vec<String> = if let Some(editing) = completion_helper.currently_editing() {
             match editing.get_id().as_str() {
                 TARGET => {
-                    let current = context.git.get_current_qualified_path()?;
-                    let root = context.git.get_model().get_virtual_root();
-                    completion_helper.complete_qualified_paths(
+                    let current = context.git.get_current_normalized_path()?;
+                    let root = context.git.get_virtual_root();
+                    completion_helper.complete_normalized_paths(
                         current,
                         root.iter_children_req().map(|p| p.to_normalized_path()),
                     )

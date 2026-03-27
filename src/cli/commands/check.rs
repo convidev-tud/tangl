@@ -1,7 +1,6 @@
 use crate::cli::completion::CompletionHelper;
 use crate::cli::*;
 use crate::git::conflict::{ConflictChecker, MergeChainStatistics};
-use crate::git::error::GitError;
 use crate::model::*;
 use crate::spl::InspectionManager;
 use clap::{Arg, ArgAction, Command};
@@ -21,11 +20,11 @@ fn run_checks(
     by_order: bool,
     test_one_to_n: bool,
     checker: &ConflictChecker,
-) -> Result<MergeChainStatistics, Box<dyn Error>> {
+) -> Result<MergeChainStatistics<AnyGitObject, AnyGitObject>, Box<dyn Error>> {
     if paths.len() < 2 {
         return Err("At least two paths are required to perform merge tests".into());
     }
-    let statistics: Result<MergeChainStatistics, GitError> =
+    let statistics: Result<MergeChainStatistics<AnyGitObject, AnyGitObject>, _> =
         match (permutations, perm_to_base, by_order, test_one_to_n) {
             (None, None, false, false) => return Err("Please choose a test strategy".into()),
             (Some(permutations), None, false, false) => {
@@ -131,7 +130,7 @@ impl CommandInterface for CheckCommand {
             .unwrap();
         let checker = ConflictChecker::new(&context.git);
 
-        let statistics: MergeChainStatistics = if paths.is_empty()
+        let statistics = if paths.is_empty()
             && permutations.is_none()
             && perm_to_base.is_none()
             && !by_order
@@ -162,8 +161,7 @@ impl CommandInterface for CheckCommand {
                 let features = state.get_total().to_normalized_paths();
                 let node_paths = context
                     .git
-                    .get_model()
-                    .assert_all::<AnyGitObject>(&features)?;
+                    .assert_paths::<AnyGitObject>(&features)?;
                 let mut final_paths: Vec<NodePath<AnyGitObject>> =
                     vec![product.try_convert_to().unwrap()];
                 final_paths.extend(node_paths);
@@ -174,7 +172,7 @@ impl CommandInterface for CheckCommand {
                     .into());
             }
         } else {
-            let current_path = context.git.get_current_qualified_path()?;
+            let current_path = context.git.get_current_normalized_path()?;
             let transformed_paths: Vec<NormalizedPath> = paths
                 .iter()
                 .map(|path| current_path.clone() + path.clone())
@@ -185,12 +183,12 @@ impl CommandInterface for CheckCommand {
             for path in transformed_paths.iter() {
                 let s = path.to_string();
                 if s.contains("*") || s.contains("[") || s.contains("]") {
-                    let root = context.git.get_model().get_virtual_root();
+                    let root = context.git.get_virtual_root();
                     let iterator = root.iter_children_req();
                     let found: Vec<NodePath<AnyGitObject>> = finder.transform(iterator).collect();
                     final_paths.extend(found);
                 } else {
-                    final_paths.push(context.git.get_model().assert_path(&path)?)
+                    final_paths.push(context.git.assert_path(&path)?)
                 }
             }
             let perm: Option<usize> = match permutations {
@@ -224,12 +222,12 @@ impl CommandInterface for CheckCommand {
     ) -> Result<Vec<String>, Box<dyn Error>> {
         let currently_editing = completion_helper.currently_editing();
         let completion: Vec<String> = if currently_editing.is_some() {
-            let root = context.git.get_model().get_virtual_root();
+            let root = context.git.get_virtual_root();
             let transformer = HasBranchFilteringNodePathTransformer::new(true);
             let relevant_paths = transformer.transform(root.iter_children_req());
             match currently_editing.unwrap().get_id().as_str() {
                 PATHS => {
-                    let current_path = context.git.get_current_qualified_path()?;
+                    let current_path = context.git.get_current_normalized_path()?;
                     let to_exclude = completion_helper.get_appendix_of(PATHS);
                     let to_exclude_paths = to_exclude
                         .into_iter()
@@ -240,8 +238,8 @@ impl CommandInterface for CheckCommand {
                         FilteringMode::EXCLUDE,
                     )?;
                     let filtered = filter.transform(relevant_paths);
-                    completion_helper.complete_qualified_paths(
-                        context.git.get_current_qualified_path()?,
+                    completion_helper.complete_normalized_paths(
+                        context.git.get_current_normalized_path()?,
                         filtered.map(|path| path.to_normalized_path()),
                     )
                 }

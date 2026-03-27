@@ -1,10 +1,9 @@
-use crate::git::conflict::{MergeChainStatistic, MergeConflict, MergeResult, MergeStatistic, MergeSuccess};
-use crate::git::error::{GitCommandError, GitError, GitModelError, GitWrongNodeTypeError, InvalidPathError};
+use crate::git::conflict::*;
+use crate::git::error::*;
 use crate::model::*;
 use std::io;
 use std::path::PathBuf;
 use std::process::{Command, Output};
-use itertools::Itertools;
 
 fn output_to_result(output: Output, command: &Vec<&str>) -> Result<String, GitCommandError> {
     let stdout = String::from_utf8(output.stdout).unwrap().trim().to_string();
@@ -114,10 +113,11 @@ impl GitInterface {
     }
 
     fn update_complete_model(&mut self) -> Result<(), io::Error> {
-        let branch_command = vec!["branch", "--format='%(refname:short) (%objectname)'"];
+        let branch_command = vec!["branch", "--format=%(refname:short) %(objectname)"];
         let branch_output = self.raw_git_interface.run(&branch_command)?;
         let all_branches: Vec<(String, String)> = String::from_utf8(branch_output.stdout)
             .unwrap()
+            .trim()
             .split("\n")
             .map(|raw_string| {
                 let split = raw_string.split(" ").collect::<Vec<&str>>();
@@ -133,6 +133,7 @@ impl GitInterface {
         let tag_output = self.raw_git_interface.run(&tag_command)?;
         let all_tags: Vec<String> = String::from_utf8(tag_output.stdout)
             .unwrap()
+            .trim()
             .split("\n")
             .map(|raw_string| raw_string.replace("*", ""))
             .collect();
@@ -154,25 +155,39 @@ impl GitInterface {
         Ok(output_to_result(out, &command)?)
     }
 
-    pub fn get_current_qualified_path(&self) -> Result<NormalizedPath, GitError> {
+    pub fn get_current_normalized_path(&self) -> Result<NormalizedPath, GitError> {
         let mut base = NormalizedPath::from("");
         base.push(self.get_current_branch()?);
         Ok(base)
     }
 
-    pub fn assert_path<T: SymbolicNodeType>(&self, path: &NormalizedPath) -> Result<NodePath<T>, InvalidPathError> {
+    pub fn get_virtual_root(&self) -> NodePath<VirtualRoot> {
+        self.get_model().get_virtual_root()
+    }
+
+    pub fn assert_path<T: SymbolicNodeType>(
+        &self,
+        path: &NormalizedPath,
+    ) -> Result<NodePath<T>, PathAssertionError> {
         let node_path = self.get_model().assert_path::<T>(path)?;
         Ok(node_path)
     }
-    
-    pub fn assert_paths<T: SymbolicNodeType>(&self, paths: &Vec<NormalizedPath>) -> Result<NodePath<T>, InvalidPathError> {
-        todo!()
+
+    pub fn assert_paths<T: SymbolicNodeType>(
+        &self,
+        paths: &Vec<NormalizedPath>,
+    ) -> Result<Vec<NodePath<T>>, PathAssertionError> {
+        let mut vec = vec![];
+        for path in paths {
+            vec.push(self.assert_path(path)?);
+        };
+        Ok(vec)
     }
 
     pub fn assert_current_node_path<T: IsGitObject>(
         &self,
-    ) -> Result<NodePath<T>, InvalidPathError> {
-        let current_qualified_path = self.get_current_qualified_path()?;
+    ) -> Result<NodePath<T>, PathAssertionError> {
+        let current_qualified_path = self.get_current_normalized_path()?;
         match self.model.assert_path::<T>(&current_qualified_path) {
             Ok(path) => Ok(path),
             Err(error) => match error {
@@ -181,13 +196,13 @@ impl GitInterface {
                         format!("fatal: current branch is not of type '{}'", T::identifier());
                     Err(WrongNodeTypeError::new(message).into())
                 }
-                _ => unreachable!(),
+                _ => Err(error.into()),
             },
         }
     }
 
     pub fn get_current_area(&self) -> Result<NodePath<ConcreteArea>, GitError> {
-        let current_qualified_path = self.get_current_qualified_path()?;
+        let current_qualified_path = self.get_current_normalized_path()?;
         let qualified_path = NormalizedPath::from(&current_qualified_path[1]);
         Ok(self.model.get_area(&qualified_path).unwrap())
     }
@@ -228,10 +243,12 @@ impl GitInterface {
     pub fn create_branch<T: SymbolicNodeType>(
         &mut self,
         path: &NormalizedPath,
-    ) -> Result<NodePath<T>, InvalidPathError> {
+    ) -> Result<NodePath<T>, PathAssertionError> {
         let current = self.assert_current_node_path::<AnyGitObject>()?;
         let commit = self.get_commit(&current)?;
-        let node_type = self.model.insert_git_branch(path.to_git_branch(), commit.get_hash().get_full_hash());
+        let node_type = self
+            .model
+            .insert_git_branch(path.to_git_branch(), commit.get_hash().get_full_hash());
         if !T::is_compatible(&node_type) {
             let message = format!(
                 "Expected to create branch of type '{}', but it would be of type '{}'",
@@ -258,7 +275,7 @@ impl GitInterface {
     pub fn merge<B: IsGitObject, T: IsGitObject>(
         &self,
         path: NodePath<T>,
-    ) -> Result<(MergeChainStatistic<B, T>, String), InvalidPathError> {
+    ) -> Result<(MergeChainStatistic<B, T>, String), PathAssertionError> {
         let object = path.get_raw_object();
         let command = vec!["merge", object.as_str()];
         let out = self.raw_git_interface.run(&command)?;
@@ -276,8 +293,7 @@ impl GitInterface {
             (conflict, response)
         };
         let current = self.assert_current_node_path::<B>()?;
-        let base = MergeStatistic::new(current, MergeResult::Base);
-        let mut chain = MergeChainStatistic::new(base);
+        let mut chain = MergeChainStatistic::new(current);
         chain.push(result.0);
         Ok((chain, result.1))
     }
@@ -309,12 +325,11 @@ impl GitInterface {
     //         .run(vec!["tag", "-d", tagged.to_git_branch().as_str()])?)
     // }
 
-    pub fn get_commit_from_hash<S: Into<String>>(&self, hash: S) -> Result<Commit, GitError> {
-        let h = hash.into();
-        let command = vec!["log", "--format=%B", "-n 1", h.as_str()];
+    pub fn get_commit_from_hash(&self, hash: &CommitHash) -> Result<Commit, GitError> {
+        let command = vec!["log", "--format=%B", "-n 1", hash.get_full_hash()];
         let out = self.raw_git_interface.run(&command)?;
         let message = output_to_result(out, &command)?;
-        Ok(Commit::new(h, message))
+        Ok(Commit::new(hash.clone(), message))
     }
 
     pub fn iter_commit_history<T: IsGitObject>(
@@ -399,16 +414,14 @@ impl GitInterface {
         Ok(output_to_result(out, &command)?)
     }
 
-    pub fn cherry_pick<S: Into<String>>(&self, commit: S) -> Result<String, GitError> {
-        let commit_str = commit.into();
-        let command = vec!["cherry-pick", commit_str.as_str()];
+    pub fn cherry_pick(&self, commit: &CommitHash) -> Result<String, GitError> {
+        let command = vec!["cherry-pick", commit.get_full_hash()];
         let out = self.raw_git_interface.run(&command)?;
         Ok(output_to_result(out, &command)?)
     }
 
-    pub fn reset_hard<S: Into<String>>(&self, commit: S) -> Result<String, GitError> {
-        let commit_str = commit.into();
-        let command = vec!["reset", "--hard", commit_str.as_str()];
+    pub fn reset_hard(&self, commit: &CommitHash) -> Result<String, GitError> {
+        let command = vec!["reset", "--hard", commit.get_full_hash()];
         let out = self.raw_git_interface.run(&command)?;
         Ok(output_to_result(out, &command)?)
     }
@@ -489,7 +502,7 @@ mod tests {
         prepare_empty_git_repo(path_buf.clone()).unwrap();
         populate_with_features(path_buf.clone()).unwrap();
         let interface = GitInterface::new(GitPath::CustomDirectory(path_buf));
-        let current = interface.get_current_qualified_path().unwrap();
+        let current = interface.get_current_normalized_path().unwrap();
         assert_eq!(current, "/main")
     }
 }

@@ -1,15 +1,21 @@
 use crate::model::*;
 use colored::{ColoredString, Colorize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::rc::Rc;
-use serde::{Deserialize, Serialize};
 use termtree::Tree;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct CommitHash {
     full_hash: String,
+}
+
+impl Display for CommitHash {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.get_short_hash())
+    }
 }
 
 impl CommitHash {
@@ -18,9 +24,7 @@ impl CommitHash {
         if full.len() < 8 {
             panic!("Commit hash must be at least 8 characters long");
         }
-        CommitHash {
-            full_hash: full,
-        }
+        CommitHash { full_hash: full }
     }
     pub fn get_full_hash(&self) -> &String {
         &self.full_hash
@@ -51,19 +55,20 @@ impl CommitTag {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct BranchData {
     branch: Option<String>,
     head: Option<CommitHash>,
 }
 impl BranchData {
-    pub fn new(
-        branch: Option<String>, head: Option<CommitHash>) -> Self {
+    pub fn new(branch: Option<String>, head: Option<CommitHash>) -> Self {
         Self { branch, head }
     }
     pub fn empty() -> Self {
-        Self { branch: None, head: None }
+        Self {
+            branch: None,
+            head: None,
+        }
     }
     pub fn has_branch(&self) -> bool {
         self.branch.is_some()
@@ -92,8 +97,8 @@ pub struct Node {
 
 impl Node {
     pub fn new<S: Into<String>>(
-        name: S, 
-        node_type: NodeType, 
+        name: S,
+        node_type: NodeType,
         branch_data: BranchData,
         tags: Vec<CommitTag>,
     ) -> Self {
@@ -137,39 +142,31 @@ impl Node {
         }
         tree
     }
-    fn decide_child_type<S: Into<String>>(
-        &self,
-        name: S,
-        metadata: &BranchData,
-    ) -> NodeType {
+    fn decide_child_type<S: Into<String>>(&self, name: S, metadata: &BranchData) -> NodeType {
         let real_name = name.into();
-        self.node_type.decide_next_type(real_name.as_str(), metadata)
+        self.node_type
+            .decide_next_type(real_name.as_str(), metadata)
     }
-    fn add_child<S: Into<String>>(
-        &mut self,
-        name: S,
-        metadata: PayloadType,
-    ) -> NodeType {
+    fn add_child<S: Into<String>>(&mut self, name: S, metadata: PayloadType) -> NodeType {
         let real_name = name.into();
         let (branch, tags) = match metadata {
-            PayloadType::Branch(branch) => {
-                (branch, vec![])
-            }
+            PayloadType::Branch(branch) => (branch, vec![]),
             PayloadType::Tag(tag) => {
                 let branch = BranchData::empty();
                 (branch, vec![tag])
             }
         };
         let node_type = self.decide_child_type(real_name.clone(), &branch);
-        let child = Rc::new(Node::new(real_name.clone(), node_type.clone(), branch, tags));
+        let child = Rc::new(Node::new(
+            real_name.clone(),
+            node_type.clone(),
+            branch,
+            tags,
+        ));
         self.children.insert(real_name, child);
         node_type
     }
-    fn update_child<S: Into<String>>(
-        &mut self,
-        name: S,
-        metadata: PayloadType,
-    ) -> NodeType {
+    fn update_child<S: Into<String>>(&mut self, name: S, metadata: PayloadType) -> NodeType {
         let real_name = name.into();
         let node_type = match metadata {
             PayloadType::Branch(branch) => {
@@ -220,15 +217,11 @@ impl Node {
     pub fn iter_children(&self) -> impl Iterator<Item = (&String, &Rc<Node>)> {
         self.children.iter()
     }
-    pub fn insert_path(
-        &mut self,
-        path: &NormalizedPath,
-        metadata: PayloadType,
-    ) -> NodeType {
-        let name = path.get(0).unwrap().to_string();
+    pub fn insert_path(&mut self, path: &NormalizedPath, metadata: PayloadType) -> NodeType {
         match path.len() {
             0 => self.node_type.clone(),
             1 => {
+                let name = path.get(0).unwrap().to_string();
                 let new_type = match self.get_child_mut(&name) {
                     Some(_) => self.update_child(name, metadata),
                     None => self.add_child(name.clone(), metadata),
@@ -236,6 +229,7 @@ impl Node {
                 new_type
             }
             _ => {
+                let name = path.get(0).unwrap().to_string();
                 let next_child = match self.get_child_mut(&name) {
                     Some(node) => node,
                     None => {

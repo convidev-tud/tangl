@@ -1,12 +1,12 @@
 use crate::model::*;
+use colored::Colorize;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::rc::Rc;
-use colored::Colorize;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum PointsTo {
@@ -198,14 +198,10 @@ impl<T: SymbolicNodeType> NodePath<T> {
                 } else {
                     PointsTo::Commit(CommitHash::new(version.clone()))
                 }
-            },
+            }
             None => PointsTo::Head,
         };
-        Some(NodePath::<AnyNode>::new(
-            self.path,
-            self.unknown_mode,
-            head,
-        ))
+        Some(NodePath::<AnyNode>::new(self.path, self.unknown_mode, head))
     }
     pub fn move_to_index(self, index: usize) -> NodePath<AnyNode> {
         let path = self.path[0..index + 1].to_vec();
@@ -251,7 +247,7 @@ impl<T: SymbolicNodeType> NodePath<T> {
                 has_tag = true;
                 break;
             }
-        };
+        }
         has_tag
     }
     pub fn get_metadata(&self) -> &BranchData {

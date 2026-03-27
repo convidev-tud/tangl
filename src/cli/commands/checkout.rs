@@ -1,6 +1,10 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::model::{AnyGitObject, ModelError, NormalizedPath, ToNormalizedPath};
+use crate::git::error::{InvalidPathError, PathAssertionError};
+use crate::model::{
+    AnyGitObject, ByTypeFilteringNodePathTransformer, NodePathTransformer, NormalizedPath,
+    ToNormalizedPath,
+};
 use clap::{Arg, Command};
 use colored::Colorize;
 use std::error::Error;
@@ -21,29 +25,29 @@ impl CommandInterface for CheckoutCommand {
             .arg_helper
             .get_argument_value::<String>("branch")
             .unwrap();
-        let full_target = context.git.get_current_qualified_path()? + NormalizedPath::from(branch);
-        let node_path = match context
-            .git
-            .get_model()
-            .assert_path::<AnyGitObject>(&full_target)
-        {
+        let full_target = context.git.get_current_normalized_path()? + NormalizedPath::from(branch);
+        let node_path = match context.git.assert_path::<AnyGitObject>(&full_target) {
             Ok(node_path) => node_path,
             Err(error) => {
                 return match error {
-                    ModelError::PathNotFound(_) => Err(format!(
-                        "Cannot checkout {}: path does not exist",
-                        full_target.to_string()
-                    )
-                    .into()),
-                    ModelError::WrongNodeType(_) => Err(format!(
-                        "Cannot checkout {}: target does not support branches",
-                        full_target
-                    )
-                    .into()),
+                    PathAssertionError::InvalidPath(error) => match error {
+                        InvalidPathError::PathNotFound(_) => Err(format!(
+                            "Cannot checkout {}: path does not exist",
+                            full_target.to_string()
+                        )
+                        .into()),
+                        InvalidPathError::WrongNodeType(_) => Err(format!(
+                            "Cannot checkout {}: target does not support branches",
+                            full_target
+                        )
+                        .into()),
+                        _ => Err(error.into()),
+                    },
+                    _ => Err(error.into()),
                 };
             }
         };
-        let current = context.git.get_current_qualified_path()?;
+        let current = context.git.get_current_normalized_path()?;
         let out = context.git.checkout(&node_path)?;
         if current == node_path.to_normalized_path() {
             context.logger.info(format!(
@@ -76,11 +80,13 @@ impl CommandInterface for CheckoutCommand {
         if maybe_editing.is_none() {
             return Ok(vec![]);
         }
-        let all_branches = context.git.get_model().get_qualified_paths_with_branches();
+        let transformer = ByTypeFilteringNodePathTransformer::<_, AnyGitObject>::new();
+        let root = context.git.get_virtual_root();
+        let all_branches = transformer.transform(root.iter_children_req());
         let result = match maybe_editing.unwrap().get_id().as_str() {
-            "branch" => completion_helper.complete_qualified_paths(
-                context.git.get_current_qualified_path()?,
-                all_branches.iter().map(|path| path.clone()),
+            "branch" => completion_helper.complete_normalized_paths(
+                context.git.get_current_normalized_path()?,
+                all_branches.map(|p| p.to_normalized_path()),
             ),
             _ => vec![],
         };

@@ -1,7 +1,7 @@
 use colored::Colorize;
+use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::ops::{Add, Index};
-use serde::{Deserialize, Serialize};
 
 const PATH_SEPARATOR: char = '/';
 const VERSION_SEPARATOR: char = ':';

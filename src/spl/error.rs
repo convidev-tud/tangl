@@ -1,141 +1,111 @@
-use crate::git::error::{GitCommandError, GitError, GitModelError, GitSerdeError};
-use crate::model::{ModelError, PathNotFoundError, WrongNodeTypeError};
+use crate::git::error::*;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::io;
 
 #[derive(Debug)]
 pub enum InitializeDerivationError {
-    Io(io::Error),
-    Git(GitCommandError),
+    PathAssertion(PathAssertionError),
     Serde(serde_json::Error),
     DerivationInProgress,
 }
-impl From<GitError> for InitializeDerivationError {
-    fn from(value: GitError) -> Self {
-        match value {
-            GitError::Io(e) => Self::Io(e),
-            GitError::Git(e) => Self::Git(e),
-        }
-    }
-}
-impl From<GitSerdeError> for InitializeDerivationError {
-    fn from(value: GitSerdeError) -> Self {
-        match value {
-            GitSerdeError::Serde(e) => Self::Serde(e),
-            GitSerdeError::Io(e) => Self::Io(e),
-            GitSerdeError::Git(e) => Self::Git(e),
-        }
-    }
-}
+impl Error for InitializeDerivationError {}
 impl Display for InitializeDerivationError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Io(e) => e.fmt(f),
             Self::Serde(e) => e.fmt(f),
-            Self::Git(e) => e.fmt(f),
+            Self::PathAssertion(e) => e.fmt(f),
             Self::DerivationInProgress => {
                 f.write_str("fatal: a derivation is currently in progress")
             }
         }
     }
 }
-impl Error for InitializeDerivationError {}
+impl From<PathAssertionError> for InitializeDerivationError {
+    fn from(value: PathAssertionError) -> Self {
+        Self::PathAssertion(value)
+    }
+}
+impl From<GitError> for InitializeDerivationError {
+    fn from(value: GitError) -> Self {
+        Self::PathAssertion(value.into())
+    }
+}
+impl From<GitSerdeError> for InitializeDerivationError {
+    fn from(value: GitSerdeError) -> Self {
+        match value {
+            GitSerdeError::Serde(e) => Self::Serde(e),
+            GitSerdeError::Git(e) => Self::PathAssertion(e.into()),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum ContinueDerivationError {
-    Io(io::Error),
-    Git(GitCommandError),
-    WrongNodeType(WrongNodeTypeError),
-    PathNotFound(PathNotFoundError),
+    PathAssertion(PathAssertionError),
     Serde(serde_json::Error),
     NoDerivationInProgress,
 }
-impl From<GitModelError> for ContinueDerivationError {
-    fn from(value: GitModelError) -> Self {
-        match value {
-            GitModelError::Io(e) => Self::Io(e),
-            GitModelError::Git(e) => Self::Git(e),
-            GitModelError::WrongNodeType(e) => Self::WrongNodeType(e),
-            GitModelError::PathNotFound(e) => Self::PathNotFound(e),
+impl Error for ContinueDerivationError {}
+impl Display for ContinueDerivationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Serde(e) => e.fmt(f),
+            Self::PathAssertion(e) => e.fmt(f),
+            Self::NoDerivationInProgress => f.write_str("fatal: no derivation in progress"),
         }
+    }
+}
+impl From<PathAssertionError> for ContinueDerivationError {
+    fn from(value: PathAssertionError) -> Self {
+        Self::PathAssertion(value)
     }
 }
 impl From<GitSerdeError> for ContinueDerivationError {
     fn from(value: GitSerdeError) -> Self {
         match value {
             GitSerdeError::Serde(e) => Self::Serde(e),
-            GitSerdeError::Io(e) => Self::Io(e),
-            GitSerdeError::Git(e) => Self::Git(e),
+            GitSerdeError::Git(e) => Self::PathAssertion(e.into()),
         }
     }
 }
 impl From<GitError> for ContinueDerivationError {
     fn from(value: GitError) -> Self {
-        match value {
-            GitError::Io(e) => Self::Io(e),
-            GitError::Git(e) => Self::Git(e),
-        }
+        Self::PathAssertion(value.into())
     }
 }
-impl Display for ContinueDerivationError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(e) => e.fmt(f),
-            Self::Git(e) => e.fmt(f),
-            Self::Serde(e) => e.fmt(f),
-            Self::WrongNodeType(e) => e.fmt(f),
-            Self::PathNotFound(e) => e.fmt(f),
-            Self::NoDerivationInProgress => f.write_str("fatal: no derivation in progress"),
-        }
-    }
-}
-
-impl Error for ContinueDerivationError {}
 
 #[derive(Debug)]
 pub enum AbortDerivationError {
-    Io(io::Error),
-    Git(GitCommandError),
+    Git(GitError),
     NoDerivationInProgress,
 }
+impl Error for AbortDerivationError {}
 impl From<GitError> for AbortDerivationError {
     fn from(value: GitError) -> Self {
-        match value {
-            GitError::Io(e) => Self::Io(e),
-            GitError::Git(e) => Self::Git(e),
-        }
+        Self::Git(value)
     }
 }
 impl Display for AbortDerivationError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Io(e) => e.fmt(f),
             Self::Git(e) => e.fmt(f),
             Self::NoDerivationInProgress => f.write_str("fatal: no derivation in progress"),
         }
     }
 }
 
-impl Error for AbortDerivationError {}
-
 #[derive(Debug)]
 pub enum UpdateProductError {
-    Io(io::Error),
-    Git(GitCommandError),
+    PathAssertion(PathAssertionError),
     Serde(serde_json::Error),
     DerivationInProgress,
-    WrongNodeType(WrongNodeTypeError),
-    PathNotFound(PathNotFoundError),
 }
+impl Error for UpdateProductError {}
 impl Display for UpdateProductError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Io(e) => e.fmt(f),
             Self::Serde(e) => e.fmt(f),
-            Self::Git(e) => e.fmt(f),
-            Self::WrongNodeType(e) => e.fmt(f),
-            Self::PathNotFound(e) => e.fmt(f),
+            Self::PathAssertion(e) => e.fmt(f),
             Self::DerivationInProgress => {
                 f.write_str("fatal: a derivation is currently in progress")
             }
@@ -145,19 +115,42 @@ impl Display for UpdateProductError {
 impl From<InitializeDerivationError> for UpdateProductError {
     fn from(value: InitializeDerivationError) -> Self {
         match value {
-            InitializeDerivationError::Io(e) => Self::Io(e),
-            InitializeDerivationError::Git(e) => Self::Git(e),
+            InitializeDerivationError::PathAssertion(e) => Self::PathAssertion(e),
             InitializeDerivationError::Serde(e) => Self::Serde(e),
             InitializeDerivationError::DerivationInProgress => Self::DerivationInProgress,
         }
     }
 }
-impl From<ModelError> for UpdateProductError {
-    fn from(value: ModelError) -> Self {
-        match value {
-            ModelError::WrongNodeType(e) => Self::WrongNodeType(e),
-            ModelError::PathNotFound(e) => Self::PathNotFound(e),
+impl From<PathAssertionError> for UpdateProductError {
+    fn from(value: PathAssertionError) -> Self {
+        Self::PathAssertion(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum OptimizeMergeOrderError {
+    PathAssertion(PathAssertionError),
+    Serde(serde_json::Error),
+}
+impl Error for OptimizeMergeOrderError {}
+impl Display for OptimizeMergeOrderError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Serde(e) => e.fmt(f),
+            Self::PathAssertion(e) => e.fmt(f),
         }
     }
 }
-impl Error for UpdateProductError {}
+impl From<PathAssertionError> for OptimizeMergeOrderError {
+    fn from(value: PathAssertionError) -> Self {
+        Self::PathAssertion(value)
+    }
+}
+impl From<GitSerdeError> for OptimizeMergeOrderError {
+    fn from(value: GitSerdeError) -> Self {
+        match value {
+            GitSerdeError::Serde(e) => Self::Serde(e),
+            GitSerdeError::Git(e) => Self::PathAssertion(e.into()),
+        }
+    }
+}
