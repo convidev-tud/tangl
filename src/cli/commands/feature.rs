@@ -8,7 +8,7 @@ fn add_feature(
     feature: NormalizedPath,
     context: &mut CommandContext,
 ) -> Result<(), Box<dyn Error>> {
-    let node_path = context.git.assert_current_node_path::<AnyHasBranch>()?;
+    let node_path = context.git.assert_current_node_path::<AnyGitObject>()?;
     let current_path = if let Some(path) = node_path.try_convert_to::<ConcreteFeature>() {
         path.to_normalized_path()
     } else if let Some(path) = node_path.as_any_type().try_convert_to::<ConcreteArea>() {
@@ -61,7 +61,7 @@ impl CommandInterface for FeatureCommand {
             .unwrap();
         match maybe_delete {
             Some(delete) => {
-                let current = context.git.assert_current_node_path::<AnyHasBranch>()?;
+                let current = context.git.assert_current_node_path::<AnyGitObject>()?;
                 let to_delete = if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
                     feature.to_normalized_path() + delete.to_normalized_path()
                 } else {
@@ -96,7 +96,7 @@ impl CommandInterface for FeatureCommand {
         let result = match completion_helper.currently_editing() {
             Some(arg) => match arg.get_id().as_str() {
                 "delete" => {
-                    let current = context.git.assert_current_node_path::<AnyHasBranch>()?;
+                    let current = context.git.assert_current_node_path::<AnyGitObject>()?;
                     let reference =
                         if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {
                             feature.to_normalized_path()

@@ -1,5 +1,5 @@
-use crate::git::conflict::{ConflictAnalyzer, ConflictChecker, MergeChainStatistic, MergePending, MergeStatistic, MergeSuccess};
-use crate::git::error::{GitError, GitModelError, GitSerdeError};
+use crate::git::conflict::{ConflictAnalyzer, ConflictChecker, MergeChainStatistic, MergeResult, MergeStatistic, NormalizedMergeStatistic};
+use crate::git::error::{GitError, GitModelError, GitSerdeError, InvalidPathError};
 use crate::git::interface::GitInterface;
 use crate::logging::TanglLogger;
 use crate::model::*;
@@ -31,15 +31,15 @@ impl Display for DerivationState {
 pub struct DerivationData {
     id: String,
     state: DerivationState,
-    initial_commit: String,
-    completed: Vec<MergeStatistic>,
-    missing: Vec<MergeStatistic>,
-    total: Vec<MergeStatistic>,
+    initial_commit: CommitHash,
+    completed: Vec<NormalizedMergeStatistic>,
+    missing: Vec<NormalizedMergeStatistic>,
+    total: Vec<NormalizedMergeStatistic>,
 }
 impl DerivationData {
     pub fn new_in_progress<S: Into<String>>(
-        features: Vec<MergeStatistic>,
-        initial_commit: S,
+        features: Vec<NormalizedMergeStatistic>,
+        initial_commit: CommitHash,
         previously_finished: &Self,
     ) -> Self {
         let uuid = Uuid::new_v4();
@@ -61,7 +61,7 @@ impl DerivationData {
                 }
                 Self {
                     id: uuid.to_string(),
-                    initial_commit: initial_commit.into(),
+                    initial_commit,
                     state: DerivationState::InProgress,
                     completed: vec![],
                     missing: features.clone(),
@@ -70,11 +70,11 @@ impl DerivationData {
             }
         }
     }
-    pub fn new_initial<S: Into<String>>(initial_commit: S) -> Self {
+    pub fn new_initial(initial_commit: CommitHash) -> Self {
         let uuid = Uuid::new_v4();
         Self {
             id: uuid.to_string(),
-            initial_commit: initial_commit.into(),
+            initial_commit,
             state: DerivationState::None,
             completed: vec![],
             missing: vec![],
@@ -94,20 +94,20 @@ impl DerivationData {
             .find(|m| m.get_path() == feature);
         if let Some(missing) = missing {
             self.missing.retain(|m| m.get_path() != feature);
-            let new = MergeStatistic::Success(MergeSuccess::new(missing.get_path().clone()));
+            let new = NormalizedMergeStatistic::new(missing.get_path().clone(), MergeResult::Success);
             self.completed.push(new)
         }
     }
-    pub fn update_missing(&mut self, new_order: &MergeChainStatistic) {
-        self.missing = new_order.iter_except_base().cloned().collect();
+    pub fn update_missing(&mut self, new_order: &Vec<NormalizedMergeStatistic>) {
+        self.missing = new_order.clone()
     }
-    pub fn get_completed(&self) -> &Vec<MergeStatistic> {
+    pub fn get_completed(&self) -> &Vec<NormalizedMergeStatistic> {
         &self.completed
     }
-    pub fn get_missing(&self) -> &Vec<MergeStatistic> {
+    pub fn get_missing(&self) -> &Vec<NormalizedMergeStatistic> {
         &self.missing
     }
-    pub fn get_total(&self) -> &Vec<MergeStatistic> {
+    pub fn get_total(&self) -> &Vec<NormalizedMergeStatistic> {
         &self.total
     }
     pub fn get_state(&self) -> &DerivationState {
@@ -116,7 +116,7 @@ impl DerivationData {
     pub fn get_id(&self) -> &String {
         &self.id
     }
-    pub fn get_initial_commit(&self) -> &String {
+    pub fn get_initial_commit(&self) -> &CommitHash {
         &self.initial_commit
     }
 }
@@ -218,22 +218,20 @@ impl<'a> DerivationManager<'a> {
 
     fn run_derivation_until_conflict(
         &mut self,
-    ) -> Result<Option<NodePath<ConcreteFeature>>, GitModelError> {
-        let feature_paths = self.current_state.get_missing().to_normalized_paths();
-        let features = self
-            .git
-            .get_model()
-            .assert_all::<ConcreteFeature>(&feature_paths)?;
+    ) -> Result<Option<NodePath<ConcreteFeature>>, InvalidPathError> {
+        let mut chain = MergeChainStatistic::<_, ConcreteFeature>::new(self.product.clone());
+        chain.fill_from_normalized(self.current_state.get_missing().clone(), self.git)?;
         let mut new_state = self.current_state.clone();
         let mut missing_feature: Option<NodePath<ConcreteFeature>> = None;
-        for feature in features {
-            let (statistic, _) = self.git.merge(&feature)?;
+        for stat in chain.iter() {
+            let feature = stat.get_path();
+            let (statistic, _) = self.git.merge::<ConcreteProduct, _>(feature.clone())?;
             if statistic.contains_conflicts() {
                 self.git.abort_merge()?;
-                missing_feature = Some(feature);
+                missing_feature = Some(feature.clone());
                 break;
             } else {
-                new_state.mark_as_completed(&feature.to_normalized_path());
+                new_state.mark_as_completed(&stat.get_path().to_normalized_path());
             }
         }
         if missing_feature.is_none() {
@@ -246,19 +244,18 @@ impl<'a> DerivationManager<'a> {
     pub fn get_current_state(&self) -> DerivationData {
         self.current_state.clone()
     }
-    pub fn get_pending_chain(&self) -> Result<MergeChainStatistic, GitError> {
+    pub fn get_pending_chain(&self) -> Result<Option<MergeChainStatistic<ConcreteProduct, ConcreteFeature>>, InvalidPathError> {
         let chain = if self.current_state.get_missing().len() == 0 {
-            MergeChainStatistic::new()
+           None
         } else {
-            let mut chain = MergeChainStatistic::new();
-            chain.push(MergeStatistic::Base(self.product.to_normalized_path()));
-            chain.fill(self.current_state.missing.clone());
+            let mut chain = MergeChainStatistic::new(self.product.clone());
+            chain.fill_from_normalized(self.current_state.missing.clone(), self.git)?;
             if self.git.pending_merge()? {
                 let second = chain.remove(1);
-                let merging = MergeStatistic::Merging(MergePending::new(second.get_path().clone()));
+                let merging = MergeStatistic::new(second.get_path().clone(), MergeResult::Merging);
                 chain.insert(1, merging);
             };
-            chain
+            Some(chain)
         };
         Ok(chain)
     }
@@ -268,17 +265,17 @@ impl<'a> DerivationManager<'a> {
 
     pub fn predict_conflicts(
         &self,
-        order: &Vec<NodePath<AnyHasBranch>>,
+        order: &Vec<NodePath<ConcreteFeature>>,
         optimize_order: bool,
-    ) -> Result<MergeChainStatistic, GitError> {
+    ) -> Result<MergeChainStatistic<ConcreteProduct, ConcreteFeature>, InvalidPathError> {
         let checker = ConflictChecker::new(&self.git);
         let mut analyzer = ConflictAnalyzer::new(checker, self.logger);
         let matrix = analyzer.calculate_2d_heuristics_matrix_with_merge_base(
-            &order,
+            &ByTypeFilteringNodePathTransformer::new().transform(order.iter().cloned()).collect(),
             &self.product.try_convert_to().unwrap(),
         )?;
         let new_order = if optimize_order {
-            matrix.estimate_best_path(&self.product.to_normalized_path())
+            matrix.estimate_best_path(&self.product.try_convert_to().unwrap())
         } else {
             let mut with_base = vec![self.product.to_normalized_path()];
             let paths: Vec<NormalizedPath> = order.iter().map(|p| p.to_normalized_path()).collect();
@@ -301,7 +298,7 @@ impl<'a> DerivationManager<'a> {
                 if !chain.all_up_to_date() {
                     let current_commit = self.git.get_commit(&self.product)?;
                     let new_data = DerivationData::new_in_progress(
-                        chain.iter_except_base().cloned().collect(),
+                        chain,
                         current_commit.get_hash(),
                         &self.current_state,
                     );

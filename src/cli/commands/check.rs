@@ -15,7 +15,7 @@ const ONE_TO_N: &str = "one_to_n";
 const PERM_TO_BASE: &str = "perm_to_base";
 
 fn run_checks(
-    paths: &Vec<NodePath<AnyHasBranch>>,
+    paths: &Vec<NodePath<AnyGitObject>>,
     permutations: Option<usize>,
     perm_to_base: Option<usize>,
     by_order: bool,
@@ -163,8 +163,8 @@ impl CommandInterface for CheckCommand {
                 let node_paths = context
                     .git
                     .get_model()
-                    .assert_all::<AnyHasBranch>(&features)?;
-                let mut final_paths: Vec<NodePath<AnyHasBranch>> =
+                    .assert_all::<AnyGitObject>(&features)?;
+                let mut final_paths: Vec<NodePath<AnyGitObject>> =
                     vec![product.try_convert_to().unwrap()];
                 final_paths.extend(node_paths);
                 run_checks(&final_paths, None, Some(1), false, false, &checker)?
@@ -179,7 +179,7 @@ impl CommandInterface for CheckCommand {
                 .iter()
                 .map(|path| current_path.clone() + path.clone())
                 .collect();
-            let mut final_paths: Vec<NodePath<AnyHasBranch>> = Vec::new();
+            let mut final_paths: Vec<NodePath<AnyGitObject>> = Vec::new();
             let finder =
                 GlobToTypeNodePathTransformer::new(&transformed_paths, FilteringMode::INCLUDE)?;
             for path in transformed_paths.iter() {
@@ -187,7 +187,7 @@ impl CommandInterface for CheckCommand {
                 if s.contains("*") || s.contains("[") || s.contains("]") {
                     let root = context.git.get_model().get_virtual_root();
                     let iterator = root.iter_children_req();
-                    let found: Vec<NodePath<AnyHasBranch>> = finder.transform(iterator).collect();
+                    let found: Vec<NodePath<AnyGitObject>> = finder.transform(iterator).collect();
                     final_paths.extend(found);
                 } else {
                     final_paths.push(context.git.get_model().assert_path(&path)?)

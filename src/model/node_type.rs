@@ -1,8 +1,9 @@
 use crate::model::*;
 use colored::{ColoredString, Colorize};
 use std::fmt::Debug;
+use std::hash::Hash;
 
-pub trait SymbolicNodeType: Clone + Debug {
+pub trait SymbolicNodeType: Clone + Debug + Eq + PartialEq + Hash {
     fn identifier() -> String;
     fn is_compatible(node_type: &NodeType) -> bool {
         Self::is_compatible_to_node_type(node_type)
@@ -15,7 +16,7 @@ pub trait HasProductChildren: SymbolicNodeType {}
 pub trait IsGitObject: SymbolicNodeType {}
 pub trait IsOnOrUnderArea: SymbolicNodeType {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ConcreteFeature;
 impl SymbolicNodeType for ConcreteFeature {
     fn identifier() -> String {
@@ -33,7 +34,7 @@ impl HasFeatureChildren for ConcreteFeature {}
 impl IsGitObject for ConcreteFeature {}
 impl IsOnOrUnderArea for ConcreteFeature {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AbstractFeature;
 impl SymbolicNodeType for AbstractFeature {
     fn identifier() -> String {
@@ -50,7 +51,7 @@ impl SymbolicNodeType for AbstractFeature {
 impl HasFeatureChildren for AbstractFeature {}
 impl IsOnOrUnderArea for AbstractFeature {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Feature;
 impl SymbolicNodeType for Feature {
     fn identifier() -> String {
@@ -67,7 +68,7 @@ impl SymbolicNodeType for Feature {
 impl HasFeatureChildren for Feature {}
 impl IsOnOrUnderArea for Feature {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct FeatureRoot;
 impl SymbolicNodeType for FeatureRoot {
     fn identifier() -> String {
@@ -84,7 +85,7 @@ impl SymbolicNodeType for FeatureRoot {
 impl HasFeatureChildren for FeatureRoot {}
 impl IsOnOrUnderArea for FeatureRoot {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ConcreteProduct;
 impl SymbolicNodeType for ConcreteProduct {
     fn identifier() -> String {
@@ -102,7 +103,7 @@ impl HasProductChildren for ConcreteProduct {}
 impl IsGitObject for ConcreteProduct {}
 impl IsOnOrUnderArea for ConcreteProduct {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AbstractProduct;
 impl SymbolicNodeType for AbstractProduct {
     fn identifier() -> String {
@@ -119,7 +120,7 @@ impl SymbolicNodeType for AbstractProduct {
 impl HasProductChildren for AbstractProduct {}
 impl IsOnOrUnderArea for AbstractProduct {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Product;
 impl SymbolicNodeType for Product {
     fn identifier() -> String {
@@ -136,7 +137,7 @@ impl SymbolicNodeType for Product {
 impl HasProductChildren for Product {}
 impl IsOnOrUnderArea for Product {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ProductRoot;
 impl SymbolicNodeType for ProductRoot {
     fn identifier() -> String {
@@ -153,7 +154,7 @@ impl SymbolicNodeType for ProductRoot {
 impl HasProductChildren for ProductRoot {}
 impl IsOnOrUnderArea for ProductRoot {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ConcreteArea;
 impl SymbolicNodeType for ConcreteArea {
     fn identifier() -> String {
@@ -170,7 +171,7 @@ impl SymbolicNodeType for ConcreteArea {
 impl IsGitObject for ConcreteArea {}
 impl IsOnOrUnderArea for ConcreteArea {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VirtualRoot;
 impl SymbolicNodeType for VirtualRoot {
     fn identifier() -> String {
@@ -185,22 +186,7 @@ impl SymbolicNodeType for VirtualRoot {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Tag;
-impl SymbolicNodeType for Tag {
-    fn identifier() -> String {
-        NodeType::Tag.get_type_name()
-    }
-
-    fn is_compatible_to_node_type(node_type: &NodeType) -> bool {
-        match node_type {
-            NodeType::Tag => true,
-            _ => false,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AnyNode;
 impl SymbolicNodeType for AnyNode {
     fn identifier() -> String {
@@ -212,9 +198,9 @@ impl SymbolicNodeType for AnyNode {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct AnyHasBranch;
-impl SymbolicNodeType for AnyHasBranch {
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AnyGitObject;
+impl SymbolicNodeType for AnyGitObject {
     fn identifier() -> String {
         "branch able".to_string()
     }
@@ -226,9 +212,9 @@ impl SymbolicNodeType for AnyHasBranch {
         }
     }
 }
-impl IsGitObject for AnyHasBranch {}
+impl IsGitObject for AnyGitObject {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NodeType {
     ConcreteFeature,
     AbstractFeature,
@@ -238,12 +224,11 @@ pub enum NodeType {
     ProductRoot,
     ConcreteArea,
     VirtualRoot,
-    Tag,
     Unknown,
 }
 
 impl NodeType {
-    pub fn decide_next_type(&self, name: &str, metadata: &NodeMetadata) -> NodeType {
+    pub fn decide_next_type(&self, name: &str, metadata: &BranchData) -> NodeType {
         match self {
             Self::ConcreteFeature | Self::AbstractFeature | Self::FeatureRoot => {
                 if metadata.has_branch() {
@@ -269,7 +254,6 @@ impl NodeType {
                     Self::Unknown
                 }
             }
-            Self::Tag => Self::Unknown,
             Self::Unknown => Self::Unknown,
         }
     }
@@ -281,7 +265,6 @@ impl NodeType {
             Self::ConcreteFeature => name.purple(),
             Self::ProductRoot => name.truecolor(231, 100, 18).bold().italic(),
             Self::ConcreteProduct => name.truecolor(231, 100, 18),
-            Self::Tag => name.green(),
             _ => name,
         }
     }
@@ -296,7 +279,6 @@ impl NodeType {
             Self::AbstractFeature => "abstract feature",
             Self::ConcreteProduct => "product",
             Self::AbstractProduct => "abstract product",
-            Self::Tag => "tag",
             Self::Unknown => "",
         };
         name.to_string()
@@ -312,7 +294,6 @@ impl NodeType {
             Self::AbstractFeature => "f'",
             Self::ConcreteProduct => "p",
             Self::AbstractProduct => "p'",
-            Self::Tag => "t",
             Self::Unknown => "",
         };
         name.to_string()

@@ -2,7 +2,7 @@ use crate::cli::*;
 use crate::git::conflict::{ConflictChecker, MergeChainStatistic, MergeChainStatistics};
 use crate::git::error::GitError;
 use crate::model::{
-    AnyHasBranch, ByTypeFilteringNodePathTransformer, CommitMetadataContainer, ConcreteFeature,
+    AnyGitObject, ByTypeFilteringNodePathTransformer, CommitMetadataContainer, ConcreteFeature,
     ConcreteProduct, NodePath, NodePathTransformer,
 };
 use crate::spl::{DerivationMetadata, DerivationState, InspectionManager};
@@ -18,22 +18,22 @@ fn handle_feature(
     context: &CommandContext,
 ) -> Result<Option<CommitMetadataContainer>, Box<dyn Error>> {
     let checker = ConflictChecker::new(&context.git);
-    let n = feature.try_convert_to::<AnyHasBranch>().unwrap();
+    let n = feature.try_convert_to::<AnyGitObject>().unwrap();
     let area = context.git.get_current_area()?;
-    let all_features: Vec<NodePath<AnyHasBranch>> = area
+    let all_features: Vec<NodePath<AnyGitObject>> = area
         .clone()
         .move_to_feature_root()
         .unwrap()
         .iter_features_req()
         .filter_map(|feature| {
             if feature != n {
-                feature.try_convert_to::<AnyHasBranch>()
+                feature.try_convert_to::<AnyGitObject>()
             } else {
                 None
             }
         })
         .collect();
-    let all_products: Vec<NodePath<AnyHasBranch>> = ByTypeFilteringNodePathTransformer::new()
+    let all_products: Vec<NodePath<AnyGitObject>> = ByTypeFilteringNodePathTransformer::new()
         .transform(
             inspector
                 .find_products_containing_feature(&feature)?
@@ -129,7 +129,7 @@ impl CommandDefinition for CommitCommand {
 impl CommandInterface for CommitCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
         let maybe_message = context.arg_helper.get_argument_value::<String>(MESSAGE);
-        let current = context.git.assert_current_node_path::<AnyHasBranch>()?;
+        let current = context.git.assert_current_node_path::<AnyGitObject>()?;
         context.git.colored_output(true);
         let inspector = InspectionManager::new(&context.git);
         let metadata: Option<CommitMetadataContainer> =

@@ -1,5 +1,6 @@
 use crate::git::error::GitError;
 use crate::git::interface::GitInterface;
+use crate::model::CommitHash;
 
 pub const METADATA_SEPARATOR: &str = "---metadata---";
 
@@ -62,7 +63,7 @@ impl CommitMetadataContainer {
 
 #[derive(Debug, Clone)]
 pub struct Commit {
-    hash: String,
+    hash: CommitHash,
     message: String,
 }
 
@@ -79,11 +80,11 @@ impl PartialEq for Commit {
 impl Commit {
     pub fn new<S1: Into<String>, S2: Into<String>>(hash: S1, message: S2) -> Self {
         Self {
-            hash: hash.into(),
+            hash: CommitHash::new(hash.into()),
             message: message.into(),
         }
     }
-    pub fn get_hash(&self) -> &String {
+    pub fn get_hash(&self) -> &CommitHash {
         &self.hash
     }
     pub fn get_message(&self) -> &String {

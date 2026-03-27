@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::model::{AnyHasBranch, ConcreteProduct};
+use crate::model::{AnyGitObject, ConcreteProduct};
 use crate::spl::{DerivationManager, DerivationState, InspectionManager};
 use clap::Command;
 use colored::Colorize;
@@ -26,7 +26,7 @@ impl CommandInterface for StatusCommand {
             .join("\n")
             .trim()
             .to_string();
-        let current_path = context.git.assert_current_node_path::<AnyHasBranch>()?;
+        let current_path = context.git.assert_current_node_path::<AnyGitObject>()?;
         let first_line = format!(
             "On {} branch {}",
             current_path.get_actual_type().get_formatted_name(),

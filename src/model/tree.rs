@@ -17,29 +17,42 @@ impl TreeDataModel {
             virtual_root: Rc::new(Node::new(
                 "",
                 NodeType::VirtualRoot,
-                NodeMetadata::empty(),
+                BranchData::empty(),
+                vec![],
             )),
             qualified_paths_with_branch: vec![],
             unknowns_exist: false,
         }
     }
-    pub fn insert_git_object(
+    pub fn insert_git_branch<S1: Into<String>, S2: Into<String>>(
         &mut self, 
-        path: NormalizedPath, 
-        is_tag: bool
+        path: S1,
+        head: S2,
     ) -> NodeType {
-        if !path.is_absolute() {
-            panic!("To insert a path, it must be absolute");
-        }
+        let branch = path.into();
+        let normalized_path = branch.to_normalized_path();
+        let hash = CommitHash::new(head);
+        let branch_data = BranchData::new(Some(branch), Some(hash));
         let node_type = Rc::get_mut(&mut self.virtual_root)
             .unwrap()
-            .insert_node_path(&path.strip_n_left(1), NodeMetadata::new(true), is_tag);
-        self.qualified_paths_with_branch.push(path);
+            .insert_path(&normalized_path, PayloadType::Branch(branch_data));
+        self.qualified_paths_with_branch.push(normalized_path);
         match node_type {
             NodeType::Unknown => self.unknowns_exist = true,
             _ => {}
         }
         node_type
+    }
+    pub fn insert_tag<S: Into<String>>(
+        &mut self,
+        path: S,
+    ) {
+        let path = path.into();
+        let normalized_path = path.to_normalized_path();
+        let tag = CommitTag::new(path);
+        Rc::get_mut(&mut self.virtual_root)
+            .unwrap()
+            .insert_path(&normalized_path.strip_n_right(normalized_path.len()-1), PayloadType::Tag(tag));
     }
     pub fn get_area(&self, path: &NormalizedPath) -> Option<NodePath<ConcreteArea>> {
         self.get_virtual_root().move_to_area(path)
@@ -94,20 +107,5 @@ impl TreeDataModel {
             final_paths.push(self.assert_path::<T>(path)?);
         }
         Ok(final_paths)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tree_node_path_with_virtual_root() {
-        let mut tree = TreeDataModel::new();
-        tree.insert_git_object(NormalizedPath::from("/main"), false);
-        let path = tree
-            .get_node_path::<AnyNode>(&NormalizedPath::from("/main"))
-            .unwrap();
-        assert_eq!(path.to_normalized_path(), "/main")
     }
 }

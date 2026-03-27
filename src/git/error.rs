@@ -19,6 +19,22 @@ impl Display for GitCommandError {
 }
 impl Error for GitCommandError {}
 
+#[derive(Debug, Clone)]
+pub struct InvalidVersionError {
+    msg: String,
+}
+impl InvalidVersionError {
+    pub fn new<S: Into<String>>(msg: S) -> GitCommandError {
+        GitCommandError { msg: msg.into() }
+    }
+}
+impl Display for InvalidVersionError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+impl Error for InvalidVersionError {}
+
 #[derive(Debug)]
 pub enum GitError {
     Io(io::Error),
@@ -176,5 +192,47 @@ impl From<GitError> for GitSerdeError {
             GitError::Io(err) => Self::Io(err),
             GitError::Git(err) => Self::Git(err),
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum InvalidPathError {
+    Io(io::Error),
+    Git(GitCommandError),
+    PathNotFound(PathNotFoundError),
+    WrongNodeType(WrongNodeTypeError),
+    InvalidVersion(InvalidVersionError)
+}
+impl Display for InvalidPathError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Git(err) => err.fmt(f),
+            Self::Io(err) => err.fmt(f),
+            Self::PathNotFound(err) => err.fmt(f),
+            Self::WrongNodeType(err) => err.fmt(f),
+            Self::InvalidVersion(err) => err.fmt(f),
+        }
+    }
+}
+impl Error for InvalidPathError {}
+impl From<GitError> for InvalidPathError {
+    fn from(err: GitError) -> Self {
+        match err {
+            GitError::Io(err) => Self::Io(err),
+            GitError::Git(err) => Self::Git(err),
+        }
+    }
+}
+impl From<ModelError> for InvalidPathError {
+    fn from(err: ModelError) -> Self {
+        match err {
+            ModelError::PathNotFound(err) => Self::PathNotFound(err),
+            ModelError::WrongNodeType(err) => Self::WrongNodeType(err),
+        }
+    }
+}
+impl From<InvalidVersionError> for InvalidPathError {
+    fn from(value: InvalidVersionError) -> Self {
+        Self::InvalidVersion(value)
     }
 }

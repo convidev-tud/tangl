@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::model::{AnyHasBranch, ByTypeFilteringNodePathTransformer, NodePathTransformer};
+use crate::model::{AnyGitObject, ByTypeFilteringNodePathTransformer, NodePathTransformer};
 use clap::Command;
 use colored::Colorize;
 use std::error::Error;
@@ -17,8 +17,8 @@ impl CommandDefinition for SpreadCommand {
 
 impl CommandInterface for SpreadCommand {
     fn run_command(&self, context: &mut CommandContext) -> Result<(), Box<dyn Error>> {
-        let current = context.git.assert_current_node_path::<AnyHasBranch>()?;
-        let type_filter = ByTypeFilteringNodePathTransformer::<_, AnyHasBranch>::new();
+        let current = context.git.assert_current_node_path::<AnyGitObject>()?;
+        let type_filter = ByTypeFilteringNodePathTransformer::<_, AnyGitObject>::new();
         context.logger.info("Spreading commits to children");
         for child in type_filter.transform(current.iter_children_req()) {
             context.git.checkout(&child)?;

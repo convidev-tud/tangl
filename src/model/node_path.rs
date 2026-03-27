@@ -2,8 +2,37 @@ use crate::model::*;
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::rc::Rc;
+use colored::Colorize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
+pub enum PointsTo {
+    Head,
+    Commit(CommitHash),
+    Tag(String),
+}
+
+impl PointsTo {
+    fn formatted(&self, colored: bool) -> String {
+        let info = if colored {
+            match self {
+                Self::Head => "Head".yellow(),
+                Self::Commit(c) => c.get_short_hash().yellow(),
+                Self::Tag(taq) => taq.green(),
+            }
+        } else {
+            match self {
+                Self::Head => "Head".normal(),
+                Self::Commit(c) => c.get_short_hash().normal(),
+                Self::Tag(tag) => tag.normal(),
+            }
+        };
+        format!(" ({info})")
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct NodePath<T: SymbolicNodeType> {
@@ -46,6 +75,16 @@ impl<T: IsOnOrUnderArea> NodePath<T> {
 }
 
 impl<T: IsGitObject> NodePath<T> {
+    pub fn get_ref_name(&self) -> &String {
+        self.get_node().get_branch_data().get_branch().unwrap()
+    }
+    pub fn get_raw_object(&self) -> &String {
+        match &self.points_to {
+            PointsTo::Head => self.get_metadata().get_head().unwrap().get_full_hash(),
+            PointsTo::Commit(hash) => hash.get_full_hash(),
+            PointsTo::Tag(tag) => tag,
+        }
+    }
     pub fn get_head(&self) -> &PointsTo {
         &self.points_to
     }
@@ -109,8 +148,18 @@ impl<T: SymbolicNodeType> ToNormalizedPath for NodePath<T> {
         for p in self.path.iter() {
             path.push(p.get_name());
         }
-        path.set_head(self.points_to.clone());
+        match &self.points_to {
+            PointsTo::Head => path.set_version_appendix::<String>(None),
+            PointsTo::Commit(hash) => path.set_version_appendix(Some(hash.get_short_hash())),
+            PointsTo::Tag(tag) => path.set_version_appendix(Some(tag)),
+        }
         path
+    }
+}
+
+impl<T: SymbolicNodeType> Hash for NodePath<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.to_normalized_path().hash(state);
     }
 }
 
@@ -142,10 +191,20 @@ impl<T: SymbolicNodeType> NodePath<T> {
         for p in path.iter_string() {
             self.path.push(self.get_node().get_child(p)?.clone());
         }
+        let head = match path.get_version_appendix() {
+            Some(version) => {
+                if self.has_tag(version) {
+                    PointsTo::Tag(version.clone())
+                } else {
+                    PointsTo::Commit(CommitHash::new(version.clone()))
+                }
+            },
+            None => PointsTo::Head,
+        };
         Some(NodePath::<AnyNode>::new(
             self.path,
             self.unknown_mode,
-            path.get_head().clone(),
+            head,
         ))
     }
     pub fn move_to_index(self, index: usize) -> NodePath<AnyNode> {
@@ -181,17 +240,22 @@ impl<T: SymbolicNodeType> NodePath<T> {
             to_iter
         })
     }
-    pub fn get_tags(&self) -> Vec<NormalizedPath> {
-        self.get_node()
-            .iter_children()
-            .filter_map(|(name, child)| match child.get_type() {
-                NodeType::Tag => Some(NormalizedPath::from(name.clone())),
-                _ => None,
-            })
-            .collect()
+    pub fn get_tags(&self) -> &Vec<CommitTag> {
+        self.get_node().get_tags()
     }
-    pub fn get_metadata(&self) -> &NodeMetadata {
-        self.get_node().get_metadata()
+    pub fn has_tag<S: Into<String>>(&self, tag: S) -> bool {
+        let mut has_tag = false;
+        let into = tag.into();
+        for tag in self.get_tags() {
+            if tag.get_tag() == &into {
+                has_tag = true;
+                break;
+            }
+        };
+        has_tag
+    }
+    pub fn get_metadata(&self) -> &BranchData {
+        self.get_node().get_branch_data()
     }
     pub fn get_actual_type(&self) -> &NodeType {
         self.get_node().get_type()

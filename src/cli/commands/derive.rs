@@ -1,6 +1,6 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::git::conflict::{MergeChainStatistic, MergeStatistic};
+use crate::git::conflict::{MergeChainStatistic, MergeResult};
 use crate::logging::TanglLogger;
 use crate::model::*;
 use crate::spl::*;
@@ -138,7 +138,7 @@ fn handle_continue(
             };
         }
     };
-    let completed: Vec<MergeStatistic> = next
+    let completed: Vec<MergeResult> = next
         .get_completed()
         .iter()
         .filter_map(|data| {
@@ -150,11 +150,11 @@ fn handle_continue(
         })
         .collect();
     let mut completed_chain = MergeChainStatistic::new();
-    completed_chain.push(MergeStatistic::Base(derivation_manager.get_product().to_normalized_path()));
+    completed_chain.push(MergeResult::Base(derivation_manager.get_product().to_normalized_path()));
     completed_chain.fill(completed);
     let still_missing: MergeChainStatistic = derivation_manager.get_pending_chain()?;
     logger.info(format!("Merged {} feature(s)", completed_chain.len() - 1));
-    for complete in completed_chain.iter_except_base() {
+    for complete in completed_chain.iter() {
         logger.info(format!("  {}", complete));
     }
     if !still_missing.is_empty() {
@@ -333,7 +333,7 @@ impl CommandInterface for DeriveCommand {
                         .into_iter()
                         .map(|p| feature_root_path.clone() + NormalizedPath::from(p))
                         .collect();
-                    let transformer = GlobToTypeNodePathTransformer::<_, AnyHasBranch>::new(
+                    let transformer = GlobToTypeNodePathTransformer::<_, AnyGitObject>::new(
                         &to_filter,
                         FilteringMode::EXCLUDE,
                     )?;

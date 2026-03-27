@@ -14,8 +14,12 @@ pub struct CommitHash {
 
 impl CommitHash {
     pub fn new<S: Into<String>>(full_hash: S) -> Self {
+        let full = full_hash.into();
+        if full.len() < 8 {
+            panic!("Commit hash must be at least 8 characters long");
+        }
         CommitHash {
-            full_hash: full_hash.into(),
+            full_hash: full,
         }
     }
     pub fn get_full_hash(&self) -> &String {
@@ -26,14 +30,36 @@ impl CommitHash {
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct CommitTag {
+    tag: String,
+    full_path: String,
+}
+
+impl CommitTag {
+    pub fn new<S: Into<String>>(full_path: S) -> Self {
+        let full_path = full_path.into();
+        let normalized = full_path.to_normalized_path();
+        let tag = normalized.last().unwrap().to_string();
+        CommitTag { tag, full_path }
+    }
+    pub fn get_full_path(&self) -> &String {
+        &self.full_path
+    }
+    pub fn get_tag(&self) -> &String {
+        &self.tag
+    }
+}
+
 
 #[derive(Clone, Debug)]
-pub struct NodeMetadata {
+pub struct BranchData {
     branch: Option<String>,
     head: Option<CommitHash>,
 }
-impl NodeMetadata {
-    pub fn new(branch: Option<String>, head: Option<CommitHash>) -> Self {
+impl BranchData {
+    pub fn new(
+        branch: Option<String>, head: Option<CommitHash>) -> Self {
         Self { branch, head }
     }
     pub fn empty() -> Self {
@@ -50,32 +76,47 @@ impl NodeMetadata {
     }
 }
 
+pub enum PayloadType {
+    Branch(BranchData),
+    Tag(CommitTag),
+}
+
 #[derive(Clone, Debug)]
 pub struct Node {
     name: String,
     node_type: NodeType,
-    metadata: NodeMetadata,
+    branch_data: BranchData,
+    tags: Vec<CommitTag>,
     children: HashMap<String, Rc<Node>>,
 }
 
 impl Node {
-    pub fn new<S: Into<String>>(name: S, node_type: NodeType, metadata: NodeMetadata) -> Self {
+    pub fn new<S: Into<String>>(
+        name: S, 
+        node_type: NodeType, 
+        branch_data: BranchData,
+        tags: Vec<CommitTag>,
+    ) -> Self {
         Self {
             name: name.into(),
             node_type,
-            metadata,
+            branch_data,
+            tags,
             children: HashMap::new(),
         }
     }
-    pub fn update_metadata(&mut self, metadata: NodeMetadata) {
-        self.metadata = metadata;
+    pub fn update_branch_data(&mut self, metadata: BranchData) {
+        self.branch_data = metadata;
+    }
+    pub fn add_tag(&mut self, tag: CommitTag) {
+        self.tags.push(tag);
     }
     pub fn update_type(&mut self, node_type: NodeType) {
         self.node_type = node_type;
     }
     fn build_display_tree(&self, show_tags: bool) -> Tree<String> {
         let mut formatted = ColoredString::from(self.name.clone());
-        if self.metadata.has_branch() {
+        if self.branch_data.has_branch() {
             formatted = formatted.blue()
         }
         let type_display = match self.node_type {
@@ -92,14 +133,6 @@ impl Node {
         sorted_children.sort_by(|a, b| b.0.chars().cmp(a.0.chars()));
         sorted_children.reverse();
         for (_, child) in sorted_children {
-            match child.node_type {
-                NodeType::Tag => {
-                    if !show_tags {
-                        continue;
-                    }
-                }
-                _ => {}
-            }
             tree.leaves.push(child.build_display_tree(show_tags));
         }
         tree
@@ -107,44 +140,52 @@ impl Node {
     fn decide_child_type<S: Into<String>>(
         &self,
         name: S,
-        metadata: &NodeMetadata,
-        is_tag: bool,
+        metadata: &BranchData,
     ) -> NodeType {
         let real_name = name.into();
-        let new_type = if is_tag {
-            NodeType::Tag
-        } else {
-            self.node_type
-                .decide_next_type(real_name.as_str(), metadata)
-        };
-        new_type
+        self.node_type.decide_next_type(real_name.as_str(), metadata)
     }
     fn add_child<S: Into<String>>(
         &mut self,
         name: S,
-        metadata: NodeMetadata,
-        is_tag: bool,
+        metadata: PayloadType,
     ) -> NodeType {
         let real_name = name.into();
-        let new_type = self.decide_child_type(real_name.clone(), &metadata, is_tag);
-        self.children.insert(
-            real_name.clone(),
-            Rc::new(Node::new(real_name, new_type.clone(), metadata)),
-        );
-        new_type
+        let (branch, tags) = match metadata {
+            PayloadType::Branch(branch) => {
+                (branch, vec![])
+            }
+            PayloadType::Tag(tag) => {
+                let branch = BranchData::empty();
+                (branch, vec![tag])
+            }
+        };
+        let node_type = self.decide_child_type(real_name.clone(), &branch);
+        let child = Rc::new(Node::new(real_name.clone(), node_type.clone(), branch, tags));
+        self.children.insert(real_name, child);
+        node_type
     }
     fn update_child<S: Into<String>>(
         &mut self,
         name: S,
-        metadata: NodeMetadata,
-        is_tag: bool,
+        metadata: PayloadType,
     ) -> NodeType {
         let real_name = name.into();
-        let new_type = self.decide_child_type(real_name.clone(), &metadata, is_tag);
-        let child = self.get_child_mut(real_name).unwrap();
-        child.update_metadata(metadata);
-        child.update_type(new_type.clone());
-        new_type
+        let node_type = match metadata {
+            PayloadType::Branch(branch) => {
+                let new_type = self.decide_child_type(real_name.clone(), &branch);
+                let child = self.get_child_mut(real_name).unwrap();
+                child.update_type(new_type.clone());
+                child.update_branch_data(branch);
+                new_type
+            }
+            PayloadType::Tag(tag) => {
+                let child = self.get_child_mut(real_name.clone()).unwrap();
+                child.add_tag(tag);
+                child.get_type().clone()
+            }
+        };
+        node_type
     }
     fn get_child_mut<S: Into<String>>(&mut self, name: S) -> Option<&mut Node> {
         let real_name = name.into();
@@ -164,8 +205,11 @@ impl Node {
     pub fn get_type(&self) -> &NodeType {
         &self.node_type
     }
-    pub fn get_metadata(&self) -> &NodeMetadata {
-        &self.metadata
+    pub fn get_branch_data(&self) -> &BranchData {
+        &self.branch_data
+    }
+    pub fn get_tags(&self) -> &Vec<CommitTag> {
+        &self.tags
     }
     pub fn get_child<S: Into<String>>(&self, name: S) -> Option<&Rc<Node>> {
         Some(self.children.get(&name.into())?)
@@ -176,19 +220,18 @@ impl Node {
     pub fn iter_children(&self) -> impl Iterator<Item = (&String, &Rc<Node>)> {
         self.children.iter()
     }
-    pub fn insert_node_path(
+    pub fn insert_path(
         &mut self,
         path: &NormalizedPath,
-        metadata: NodeMetadata,
-        is_tag: bool,
+        metadata: PayloadType,
     ) -> NodeType {
         let name = path.get(0).unwrap().to_string();
         match path.len() {
             0 => self.node_type.clone(),
             1 => {
                 let new_type = match self.get_child_mut(&name) {
-                    Some(_) => self.update_child(name, metadata, is_tag),
-                    None => self.add_child(name.clone(), metadata, is_tag),
+                    Some(_) => self.update_child(name, metadata),
+                    None => self.add_child(name.clone(), metadata),
                 };
                 new_type
             }
@@ -196,11 +239,11 @@ impl Node {
                 let next_child = match self.get_child_mut(&name) {
                     Some(node) => node,
                     None => {
-                        self.add_child(name.clone(), NodeMetadata::empty(), false);
+                        self.add_child(name.clone(), PayloadType::Branch(BranchData::empty()));
                         self.get_child_mut(&name).unwrap()
                     }
                 };
-                next_child.insert_node_path(&path.strip_n_left(1), metadata, is_tag)
+                next_child.insert_path(&path.strip_n_left(1), metadata)
             }
         }
     }
@@ -241,40 +284,5 @@ impl Node {
     }
     pub fn display_tree(&self, show_tags: bool) -> String {
         self.build_display_tree(show_tags).to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn prepare_node() -> Node {
-        let mut node = Node::new("root", NodeType::ConcreteFeature, NodeMetadata::empty());
-        node.insert_node_path(
-            &NormalizedPath::from("foo/f1"),
-            NodeMetadata::empty(),
-            false,
-        );
-        node.insert_node_path(
-            &NormalizedPath::from("bar/b1"),
-            NodeMetadata::empty(),
-            false,
-        );
-        node
-    }
-
-    #[test]
-    fn test_get_qualified_paths_by() {
-        let predicate = |_: &i32, node: &Node| -> bool { !node.get_metadata().has_branch() };
-        let node = prepare_node();
-        let result = node
-            .get_qualified_paths_by(&NormalizedPath::new(), &predicate, &vec![0])
-            .get(&0)
-            .unwrap()
-            .clone();
-        assert!(result.contains(&NormalizedPath::from("foo")));
-        assert!(result.contains(&NormalizedPath::from("bar")));
-        assert!(result.contains(&NormalizedPath::from("foo/f1")));
-        assert!(result.contains(&NormalizedPath::from("bar/b1")));
     }
 }

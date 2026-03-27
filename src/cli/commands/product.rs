@@ -10,7 +10,7 @@ fn add_product(
     product: NormalizedPath,
     context: &mut CommandContext,
 ) -> Result<(), Box<dyn Error>> {
-    let node_path = context.git.assert_current_node_path::<AnyHasBranch>()?;
+    let node_path = context.git.assert_current_node_path::<AnyGitObject>()?;
     let current_path = if let Some(path) = node_path.try_convert_to::<ConcreteProduct>() {
         path.to_normalized_path()
     } else if let Some(path) = node_path.as_any_type().try_convert_to::<ConcreteArea>() {
@@ -63,7 +63,7 @@ impl CommandInterface for ProductCommand {
         let maybe_delete = context.arg_helper.get_argument_value::<String>("delete");
         let maybe_product = context.arg_helper.get_argument_value::<String>(PRODUCT);
         if let Some(delete) = maybe_delete {
-            let current = context.git.assert_current_node_path::<AnyHasBranch>()?;
+            let current = context.git.assert_current_node_path::<AnyGitObject>()?;
             let to_delete = if let Some(product) = current.try_convert_to::<ConcreteProduct>() {
                 product.to_normalized_path() + delete.to_normalized_path()
             } else {

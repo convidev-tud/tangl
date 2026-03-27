@@ -1,6 +1,6 @@
 use crate::cli::completion::*;
 use crate::cli::*;
-use crate::model::{AnyHasBranch, ModelError, NormalizedPath, ToNormalizedPath};
+use crate::model::{AnyGitObject, ModelError, NormalizedPath, ToNormalizedPath};
 use clap::{Arg, Command};
 use colored::Colorize;
 use std::error::Error;
@@ -25,7 +25,7 @@ impl CommandInterface for CheckoutCommand {
         let node_path = match context
             .git
             .get_model()
-            .assert_path::<AnyHasBranch>(&full_target)
+            .assert_path::<AnyGitObject>(&full_target)
         {
             Ok(node_path) => node_path,
             Err(error) => {
