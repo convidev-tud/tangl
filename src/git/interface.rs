@@ -18,7 +18,7 @@ fn output_to_result(output: Output, command: &Vec<&str>) -> Result<String, GitCo
             "fatal: Command 'git {}' returned with exit code {}:\n",
             git_command, code
         );
-        Err(GitCommandError::new(error + message.as_str()))
+        Err(GitCommandError::new(message, error))
     }
 }
 
@@ -32,7 +32,7 @@ fn status_to_result(status: ExitStatus, command: &Vec<&str>) -> Result<(), GitCo
             "fatal: Command 'git {}' returned with exit code {}:\n",
             git_command, code
         );
-        Err(GitCommandError::new(error))
+        Err(GitCommandError::new("", error))
     }
 }
 
@@ -310,27 +310,72 @@ impl GitInterface {
         let object = path.get_qualified_object();
         let command = vec!["merge", object.as_str()];
         let out = self.raw_git_interface.run_attached(&command)?;
-        let result = if out.status.success() {
-            let response = String::from_utf8(out.stdout).unwrap();
-            let status = if response.contains("Already up to date.") {
-                MergeStatistic::new(path, MergeResult::UpToDate)
-            } else {
-                self.update_head_commit(&current)?;
-                MergeStatistic::new(path, MergeResult::Success)
-            };
-            (status, response)
-        } else {
-            let response = String::from_utf8(out.stderr).unwrap();
-            let conflict = MergeStatistic::new(path, MergeResult::Conflict);
-            (conflict, response)
+        let result = output_to_result(out, &command);
+        let (status, response) = match result {
+            Ok(output) => {
+                let status = if output.contains("Already up to date.") {
+                    MergeStatistic::new(path, MergeResult::UpToDate)
+                } else {
+                    self.update_head_commit(&current)?;
+                    MergeStatistic::new(path, MergeResult::Success)
+                };
+                (status, output)
+            }
+            Err(error) => {
+                let output = error.get_git_output();
+                let status = if output.contains("CONFLICT") {
+                    MergeStatistic::new(path, MergeResult::Conflict)
+                } else {
+                    MergeStatistic::new(path, MergeResult::Error(output.to_string()))
+                };
+                (status, output.to_string())
+            }
         };
         let mut chain = MergeChainStatistic::new(current);
-        chain.push(result.0);
-        Ok((chain, result.1))
+        chain.push(status);
+        Ok((chain, response))
+    }
+
+    pub fn cherry_pick<B: IsGitObject, T: IsGitObject>(
+        &self,
+        path: NodePath<T>
+    ) -> Result<(MergeChainStatistic<B, T>, String), PathAssertionError> {
+        let current = self.assert_current_node_path::<B>()?;
+        let object = path.get_qualified_object();
+        let command = vec!["cherry-pick", object.as_str()];
+        let out = self.raw_git_interface.run_attached(&command)?;
+        let result = output_to_result(out, &command);
+        let (status, response) = match result {
+            Ok(output) => {
+                let status = MergeStatistic::new(path, MergeResult::Success);
+                self.update_head_commit(&current)?;
+                (status, output)
+            }
+            Err(error) => {
+                let output = error.get_git_output();
+                let status = if output.contains("CONFLICT") {
+                    MergeStatistic::new(path, MergeResult::Conflict)
+                } else if output.contains("If you wish to commit it anyway") {
+                    MergeStatistic::new(path, MergeResult::UpToDate)
+                } else {
+                    MergeStatistic::new(path, MergeResult::Error(output.to_string()))
+                };
+                (status, output.to_string())
+            }
+        };
+        let mut chain = MergeChainStatistic::new(current);
+        chain.push(status);
+        Ok((chain, response))
     }
 
     pub fn abort_merge(&self) -> Result<String, GitError> {
         let command = vec!["merge", "--abort"];
+        let out = self.raw_git_interface.run_attached(&command)?;
+        Ok(output_to_result(out, &command)?)
+    }
+
+    pub fn abort_cherry_pick(&self) -> Result<String, GitError> {
+        let command = vec!["cherry-pick", "--abort"];
         let out = self.raw_git_interface.run_attached(&command)?;
         Ok(output_to_result(out, &command)?)
     }
@@ -420,43 +465,27 @@ impl GitInterface {
     pub fn commit<S: Into<String>, T: IsGitObject>(
         &self,
         message: S,
-        empty: bool,
         metadata: Option<&CommitMetadataContainer>,
-    ) -> Result<(), PathAssertionError> {
-        let commit_message = make_commit_message_with_metadata(message, metadata);
-        let command = if empty {
-            vec!["commit", "--allow-empty", "-m", commit_message.as_str()]
-        } else {
-            vec!["commit", "-m", commit_message.as_str()]
-        };
-        let out = self.raw_git_interface.run_detached(&command)?;
-        let current = self.assert_current_node_path::<T>()?;
-        self.update_head_commit(&current)?;
-        Ok(status_to_result(out, &command)?)
-    }
-
-    pub fn commit_attached<S: Into<String>, T: IsGitObject>(
-        &self,
-        message: S,
-        empty: bool,
-        metadata: Option<&CommitMetadataContainer>,
+        allow_empty: bool,
+        attached: bool,
     ) -> Result<String, PathAssertionError> {
+        let current = self.assert_current_node_path::<T>()?;
         let commit_message = make_commit_message_with_metadata(message, metadata);
-        let command = if empty {
+        let command = if allow_empty {
             vec!["commit", "--allow-empty", "-m", commit_message.as_str()]
         } else {
             vec!["commit", "-m", commit_message.as_str()]
         };
-        let out = self.raw_git_interface.run_attached(&command)?;
-        let current = self.assert_current_node_path::<T>()?;
+        let response = if attached {
+            let out = self.raw_git_interface.run_attached(&command)?;
+            output_to_result(out, &command)?
+        } else {
+            let out = self.raw_git_interface.run_detached(&command)?;
+            status_to_result(out, &command)?;
+            "".to_string()
+        };
         self.update_head_commit(&current)?;
-        Ok(output_to_result(out, &command)?)
-    }
-
-    pub fn cherry_pick(&self, commit: &CommitHash) -> Result<String, GitError> {
-        let command = vec!["cherry-pick", commit.get_full_hash()];
-        let out = self.raw_git_interface.run_attached(&command)?;
-        Ok(output_to_result(out, &command)?)
+        Ok(response)
     }
 
     pub fn reset_hard(&self, commit: &CommitHash) -> Result<String, GitError> {

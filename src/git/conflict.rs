@@ -21,6 +21,7 @@ pub enum MergeResult {
     Conflict,
     Merging,
     Aborted,
+    Error(String),
 }
 
 impl Display for MergeResult {
@@ -32,6 +33,7 @@ impl Display for MergeResult {
             Self::Conflict => "(Conflict)".red(),
             Self::Merging => "(Merging)".yellow(),
             Self::Aborted => "(Aborted)".red(),
+            Self::Error(reason) => format!("(Error: {reason})").red(),
         };
         f.write_str(value.to_string().as_str())
     }
@@ -193,6 +195,18 @@ impl<B: IsGitObject, C: IsGitObject> MergeChainStatistic<B, C> {
             .collect();
         all.len()
     }
+    pub fn get_n_errors(&self) -> usize {
+        let all: Vec<&MergeStatistic<C>> = self
+            .iter_chain()
+            .filter(|s| {
+                match s.get_stat() {
+                    MergeResult::Error(_) => true,
+                    _ => false,
+                }
+            })
+            .collect();
+        all.len()
+    }
     pub fn all_up_to_date(&self) -> bool {
         if self.chain.is_empty() || self.chain.len() == 1 {
             true
@@ -208,6 +222,12 @@ impl<B: IsGitObject, C: IsGitObject> MergeChainStatistic<B, C> {
     }
     pub fn contains_conflicts(&self) -> bool {
         self.get_n_conflict() > 0
+    }
+    pub fn contains_up_to_date(&self) -> bool {
+        self.get_n_up_to_date() > 0
+    }
+    pub fn contains_errors(&self) -> bool {
+        self.get_n_errors() > 0
     }
     pub fn display_as_path(&self) -> String {
         vec![&self.base]
@@ -227,6 +247,7 @@ pub struct MergeChainStatistics<B: IsGitObject, T: IsGitObject> {
     statistics: Vec<MergeChainStatistic<B, T>>,
     total_successes: usize,
     total_conflicts: usize,
+    total_errors: usize,
 }
 
 impl<B: IsGitObject, T: IsGitObject> MergeChainStatistics<B, T> {
@@ -235,6 +256,7 @@ impl<B: IsGitObject, T: IsGitObject> MergeChainStatistics<B, T> {
             statistics: vec![],
             total_successes: 0,
             total_conflicts: 0,
+            total_errors: 0,
         }
     }
     pub fn fill_from_iter<I: Iterator<Item = MergeChainStatistic<B, T>>>(&mut self, statistics: I) {
@@ -245,6 +267,7 @@ impl<B: IsGitObject, T: IsGitObject> MergeChainStatistics<B, T> {
     pub fn push(&mut self, statistic: MergeChainStatistic<B, T>) {
         self.total_successes += statistic.get_n_success();
         self.total_conflicts += statistic.get_n_conflict();
+        self.total_errors += statistic.get_n_errors();
         self.statistics.push(statistic);
     }
     pub fn iter_all(&self) -> impl Iterator<Item = &MergeChainStatistic<B, T>> {
@@ -253,11 +276,17 @@ impl<B: IsGitObject, T: IsGitObject> MergeChainStatistics<B, T> {
     pub fn iter_conflicts(&self) -> impl Iterator<Item = &MergeChainStatistic<B, T>> {
         self.statistics.iter().filter(|s| s.contains_conflicts())
     }
+    pub fn iter_errors(&self) -> impl Iterator<Item = &MergeChainStatistic<B, T>> {
+        self.statistics.iter().filter(|s| s.contains_errors())
+    }
     pub fn n_ok(&self) -> usize {
         self.total_successes
     }
     pub fn n_conflicts(&self) -> usize {
         self.total_conflicts
+    }
+    pub fn n_errors(&self) -> usize {
+        self.total_errors
     }
 }
 
@@ -286,6 +315,7 @@ impl MergeStatisticWeight {
                 MergeResult::Conflict => -1,
                 MergeResult::Merging => 0,
                 MergeResult::Aborted => -10,
+                MergeResult::Error(_) => -20,
             },
         }
     }
@@ -341,13 +371,23 @@ impl<T: IsGitObject> MergeStatistics<T> {
 }
 
 #[derive(Debug, Clone)]
+pub enum CheckMode {
+    Merge,
+    CherryPick,
+}
+
+#[derive(Debug, Clone)]
 pub struct ConflictChecker<'a> {
     git: &'a GitInterface,
+    mode: CheckMode,
 }
 
 impl<'a> ConflictChecker<'a> {
-    pub fn new(interface: &'a GitInterface) -> Self {
-        Self { git: interface }
+    pub fn new(
+        git: &'a GitInterface,
+        mode: CheckMode,
+    ) -> Self {
+        Self { git, mode }
     }
 
     pub fn check_k_permutations<T: IsGitObject>(
@@ -439,11 +479,24 @@ impl<'a> ConflictChecker<'a> {
             if skip {
                 chain_statistic.push(MergeStatistic::new(path.clone(), MergeResult::Aborted));
             } else {
-                let (statistic, _) = self.git.merge::<Temporary, C>(path.clone())?;
-                if statistic.contains_conflicts() {
-                    self.git.abort_merge()?;
-                    skip = true;
-                }
+                let statistic = match self.mode {
+                    CheckMode::Merge => {
+                        let (statistic, _) = self.git.merge::<Temporary, C>(path.clone())?;
+                        if statistic.contains_conflicts() {
+                            self.git.abort_merge()?;
+                            skip = true;
+                        }
+                        statistic
+                    }
+                    CheckMode::CherryPick => {
+                        let (statistic, _) = self.git.cherry_pick::<Temporary, C>(path.clone())?;
+                        if statistic.contains_conflicts() || statistic.contains_up_to_date() {
+                            self.git.abort_cherry_pick()?;
+                            skip = true;
+                        }
+                        statistic
+                    }
+                };
                 chain_statistic.push(statistic.get(0).unwrap().clone());
             }
         }

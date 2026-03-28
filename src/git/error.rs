@@ -5,16 +5,20 @@ use std::io;
 
 #[derive(Debug, Clone)]
 pub struct GitCommandError {
+    git_output: String,
     msg: String,
 }
 impl GitCommandError {
-    pub fn new<S: Into<String>>(msg: S) -> GitCommandError {
-        GitCommandError { msg: msg.into() }
+    pub fn new<S1: Into<String>, S2: Into<String>>(git_output: S1, msg: S2) -> GitCommandError {
+        GitCommandError { git_output: git_output.into(), msg: msg.into() }
+    }
+    pub fn get_git_output(&self) -> &String {
+        &self.git_output
     }
 }
 impl Display for GitCommandError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.msg)
+        write!(f, "{}\n{}", self.msg, self.git_output)
     }
 }
 impl Error for GitCommandError {}
@@ -104,8 +108,8 @@ pub struct InvalidVersionError {
     msg: String,
 }
 impl InvalidVersionError {
-    pub fn new<S: Into<String>>(msg: S) -> GitCommandError {
-        GitCommandError { msg: msg.into() }
+    pub fn new<S: Into<String>>(msg: S) -> InvalidVersionError {
+        InvalidVersionError { msg: msg.into() }
     }
 }
 impl Display for InvalidVersionError {

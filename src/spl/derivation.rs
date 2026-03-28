@@ -1,7 +1,4 @@
-use crate::git::conflict::{
-    ConflictAnalyzer, ConflictChecker, MergeChainStatistic, MergeResult, MergeStatistic,
-    NormalizedMergeStatistic,
-};
+use crate::git::conflict::{CheckMode, ConflictAnalyzer, ConflictChecker, MergeChainStatistic, MergeResult, MergeStatistic, NormalizedMergeStatistic};
 use crate::git::error::PathAssertionError;
 use crate::git::interface::GitInterface;
 use crate::logging::TanglLogger;
@@ -212,7 +209,7 @@ impl<'a> DerivationManager<'a> {
     ) -> Result<String, DerivationCommitError> {
         let real_message = message.into();
         let container = CommitMetadataContainer::new(metadata)?;
-        Ok(self.git.commit_attached::<_, ConcreteProduct>(real_message, true, Some(&container))?)
+        Ok(self.git.commit::<_, ConcreteProduct>(real_message, Some(&container), true, true)?)
     }
 
     fn run_derivation_until_conflict(
@@ -270,7 +267,7 @@ impl<'a> DerivationManager<'a> {
         order: &Vec<NodePath<ConcreteFeature>>,
         optimize_order: bool,
     ) -> Result<MergeChainStatistic<ConcreteProduct, ConcreteFeature>, PathAssertionError> {
-        let checker = ConflictChecker::new(&self.git);
+        let checker = ConflictChecker::new(&self.git, CheckMode::Merge);
         let mut analyzer = ConflictAnalyzer::new(checker, self.logger);
         let matrix = analyzer.calculate_2d_heuristics_matrix_with_merge_base(
             &ByTypeFilteringNodePathTransformer::new()

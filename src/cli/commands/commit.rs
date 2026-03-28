@@ -1,5 +1,5 @@
 use crate::cli::*;
-use crate::git::conflict::{ConflictChecker, MergeChainStatistics};
+use crate::git::conflict::{CheckMode, ConflictChecker, MergeChainStatistics};
 use crate::model::{
     AnyGitObject, CommitMetadataContainer, ConcreteFeature, ConcreteProduct, NodePath,
 };
@@ -15,7 +15,7 @@ fn handle_feature(
     inspector: &InspectionManager,
     context: &CommandContext,
 ) -> Result<Option<CommitMetadataContainer>, Box<dyn Error>> {
-    let checker = ConflictChecker::new(&context.git);
+    let checker = ConflictChecker::new(&context.git, CheckMode::CherryPick);
     let area = context.git.get_current_area()?;
     let all_features: Vec<NodePath<ConcreteFeature>> = area
         .clone()
@@ -32,15 +32,21 @@ fn handle_feature(
         .collect();
     let all_products = inspector.find_products_containing_feature(&feature)?;
 
-    let feature_statistics: MergeChainStatistics<ConcreteFeature, ConcreteFeature> = checker
-        .check_n_against_permutations(&vec![feature.clone()], &all_features, &1)
+    let feature_statistics: MergeChainStatistics<ConcreteFeature, ConcreteFeature> = all_features
+        .iter()
+        .map(|f| {
+            checker
+                .check_permutations_against_base(&vec![feature.clone()], f, 1)
+                .collect::<Vec<_>>()
+        })
+        .flatten()
         .collect::<Result<_, _>>()?;
 
     if feature_statistics.n_conflicts() > 0 {
         context
             .logger
             .warn(format!(
-                "\nWarning: Feature stands in conflict with other feature(s) ({} failures, showing both directions)",
+                "\nWarning: Commit stands in conflict with {} other feature(s)",
                 feature_statistics.n_conflicts().to_string().red()
             ));
         for conflict in feature_statistics.iter_conflicts() {
@@ -49,20 +55,25 @@ fn handle_feature(
                 .warn(format!("  {}", conflict.display_as_path()));
         }
     }
+    for error in feature_statistics.iter_errors() {
+        context
+            .logger
+            .warn(format!("  {}", error.display_as_path()));
+    }
 
     let product_statistics: MergeChainStatistics<ConcreteProduct, ConcreteFeature> = all_products
         .iter()
         .map(|product| {
             checker
                 .check_permutations_against_base(&vec![feature.clone()], product, 1)
-                .collect::<Vec<Result<_, _>>>()
+                .collect::<Vec<_>>()
         })
         .flatten()
         .collect::<Result<_, _>>()?;
 
     if product_statistics.n_conflicts() > 0 {
         context.logger.warn(format!(
-            "\nWarning: Feature stands in conflict with {} product(s) derived from it",
+            "\nWarning: Commit stands in conflict with {} product(s) derived from this feature",
             product_statistics.n_conflicts().to_string().red()
         ));
         for conflict in product_statistics.iter_conflicts() {
@@ -70,7 +81,12 @@ fn handle_feature(
                 .logger
                 .warn(format!("  {}", conflict.display_as_path()));
         }
-    };
+    }
+    for error in product_statistics.iter_errors() {
+        context
+            .logger
+            .warn(format!("  {}", error.display_as_path()));
+    }
     Ok(None)
 }
 
@@ -130,7 +146,9 @@ impl CommandInterface for CommitCommand {
                 None
             };
         match maybe_message {
-            Some(message) => context.git.commit::<_, AnyGitObject>(&message, false, metadata.as_ref())?,
+            Some(message) => context
+                .git
+                .commit::<_, AnyGitObject>(&message, metadata.as_ref(), false, false)?,
             None => todo!(),
         };
         if let Some(feature) = current.try_convert_to::<ConcreteFeature>() {

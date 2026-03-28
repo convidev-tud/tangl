@@ -1,6 +1,6 @@
 use crate::cli::completion::CompletionHelper;
 use crate::cli::*;
-use crate::git::conflict::{ConflictChecker, MergeChainStatistics};
+use crate::git::conflict::{CheckMode, ConflictChecker, MergeChainStatistics};
 use crate::model::*;
 use crate::spl::InspectionManager;
 use clap::{Arg, ArgAction, Command};
@@ -128,7 +128,7 @@ impl CommandInterface for CheckCommand {
             .arg_helper
             .get_argument_value::<bool>(&ONE_TO_N)
             .unwrap();
-        let checker = ConflictChecker::new(&context.git);
+        let checker = ConflictChecker::new(&context.git, CheckMode::Merge);
 
         let statistics = if paths.is_empty()
             && permutations.is_none()
@@ -201,13 +201,13 @@ impl CommandInterface for CheckCommand {
         };
 
         for statistic in statistics.iter_all() {
-            if statistic.contains_conflicts() {
-                context.logger.info(statistic.display_as_path());
+            if statistic.contains_conflicts() || statistic.contains_errors() {
+                context.logger.error(statistic.display_as_path());
             } else {
                 context.logger.debug(statistic.display_as_path());
             }
         }
-        if statistics.n_conflicts() == 0 {
+        if statistics.n_conflicts() == 0 && statistics.n_errors() == 0 {
             context.logger.info("No conflicts".green().to_string());
         }
         Ok(())
