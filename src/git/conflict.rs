@@ -26,7 +26,7 @@ pub enum MergeResult {
 impl Display for MergeResult {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value = match self {
-            Self::Base => "(Base)".blue(),
+            Self::Base => "".normal(),
             Self::Success => "(Ok)".green(),
             Self::UpToDate => "(Up To Date)".green(),
             Self::Conflict => "(Conflict)".red(),
@@ -69,14 +69,17 @@ pub struct MergeStatistic<T: IsGitObject> {
 
 impl<T: IsGitObject> Display for MergeStatistic<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(
-            format!(
-                "{} {}",
-                self.get_path().formatted_with_version(true),
-                self.get_stat(),
+        let stat = self.get_stat().to_string();
+        if !stat.is_empty() {
+            f.write_str(
+                format!(
+                    "{} {stat}",
+                    self.get_path().formatted_with_version(true),
+                ).as_str(),
             )
-            .as_str(),
-        )
+        } else {
+            f.write_str(self.get_path().formatted_with_version(true).as_str())
+        }
     }
 }
 

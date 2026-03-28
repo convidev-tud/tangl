@@ -148,7 +148,7 @@ impl CommandInterface for CheckCommand {
                     if &path == &current_path {
                         None
                     } else {
-                        Some(path.try_convert_to().unwrap())
+                        Some(path.try_convert_to()?)
                     }
                 }));
                 run_checks(&paths, None, None, false, true, &checker)?
