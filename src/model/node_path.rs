@@ -233,18 +233,17 @@ impl<T: SymbolicNodeType> NodePath<T> {
         }
     }
     pub fn move_to(mut self, path: &NormalizedPath) -> Option<NodePath<AnyNode>> {
-        let mut without_version = path.clone();
-        without_version.strip_version();
+        let without_version = path.strip_version();
         for p in without_version.iter_segments() {
             let node = self.get_node().borrow().get_child(p)?.clone();
             self.path.push(node);
         }
         let head = match path.get_version_appendix() {
             Some(version) => {
-                if self.has_tag(version) {
-                    PointsTo::Tag(version.clone())
+                if self.has_tag(version.clone()) {
+                    PointsTo::Tag(version)
                 } else {
-                    PointsTo::Commit(CommitHash::new(version.clone()))
+                    PointsTo::Commit(CommitHash::new(version))
                 }
             }
             None => PointsTo::Head,
@@ -305,8 +304,7 @@ impl<T: SymbolicNodeType> NodePath<T> {
         self.get_node().borrow().display_tree(show_tags)
     }
     pub fn formatted(&self, colored: bool) -> String {
-        let mut path = self.to_normalized_path();
-        path.strip_version();
+        let path = self.to_normalized_path().strip_version();
         if colored {
             path.to_string().blue().to_string()
         } else {

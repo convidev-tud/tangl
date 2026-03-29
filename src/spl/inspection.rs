@@ -82,8 +82,8 @@ impl<'a> InspectionManager<'a> {
             for product in product_root.iter_products_req() {
                 if let Some(concrete) = product.try_convert_to::<ConcreteProduct>() {
                     let state = self.get_last_derivation_state(&concrete)?;
-                    let features: Vec<NormalizedPath> = state.get_total().to_normalized_paths();
-                    if features.contains(&feature.to_normalized_path()) {
+                    let features: Vec<NormalizedPath> = state.get_total_without_versions();
+                    if features.contains(&feature.to_normalized_path().strip_version()) {
                         products.push(concrete);
                     }
                 }

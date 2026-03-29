@@ -9,7 +9,6 @@ const VERSION_SEPARATOR: char = ':';
 #[derive(Clone, Debug, Hash, Eq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NormalizedPath {
     path: Vec<String>,
-    version_appendix: Option<String>,
 }
 
 impl From<String> for NormalizedPath {
@@ -127,7 +126,6 @@ impl NormalizedPath {
     pub fn new() -> Self {
         Self {
             path: Vec::new(),
-            version_appendix: None,
         }
     }
     pub fn to_git_branch(&self) -> String {
@@ -148,31 +146,27 @@ impl NormalizedPath {
     pub fn push<S: Into<String>>(&mut self, path: S) {
         let qualified_str = path.into().replace("_", "");
         for split in qualified_str.trim().split(PATH_SEPARATOR) {
-            if split.contains(VERSION_SEPARATOR) {
-                let path_and_version = split.split(VERSION_SEPARATOR).collect::<Vec<&str>>();
-                let version = path_and_version[1];
-                self.path.push(split.to_lowercase());
-                self.version_appendix = Some(version.to_string());
-            } else {
-                self.path.push(split.to_lowercase());
-            }
+            self.path.push(split.to_lowercase());
         }
     }
-    pub fn get_version_appendix(&self) -> Option<&String> {
-        self.version_appendix.as_ref()
+    pub fn get_version_appendix(&self) -> Option<String> {
+        let last = self.last()?;
+        if last.contains(VERSION_SEPARATOR) {
+            Some(last.split(VERSION_SEPARATOR).collect::<Vec<_>>()[1].to_string())
+        } else { None }
     }
     pub fn set_version_appendix<S: Into<String>>(&mut self, version_appendix: Option<S>) {
         if let Some(version) = version_appendix {
             let version = version.into();
             let last = self.path.pop().unwrap();
-            if self.version_appendix.is_some() {
+            if self.get_version_appendix().is_some() {
                 let split = last.split(VERSION_SEPARATOR).collect::<Vec<&str>>();
                 self.push(format!("{}:{version}", split[0]));
             } else {
                 self.push(format!("{last}:{version}"));
             }
         } else {
-            if self.version_appendix.is_some() {
+            if self.get_version_appendix().is_some() {
                 let last = self.path.pop().unwrap();
                 let split = last.split(VERSION_SEPARATOR).collect::<Vec<&str>>();
                 self.push(format!("{}", split[0]));
@@ -185,8 +179,10 @@ impl NormalizedPath {
     pub fn strip_n_left(&self, n: usize) -> NormalizedPath {
         self.strip_n(n, self.path.len())
     }
-    pub fn strip_version(&mut self) {
-        self.set_version_appendix::<String>(None)
+    pub fn strip_version(&self) -> NormalizedPath {
+        let mut new = self.clone(); 
+        new.set_version_appendix::<String>(None);
+        new
     }
     pub fn strip_n_right(&self, n: usize) -> NormalizedPath {
         self.strip_n(0, n)

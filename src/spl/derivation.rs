@@ -31,31 +31,45 @@ pub struct DerivationData {
     initial_commit: CommitHash,
     completed: Vec<NormalizedMergeStatistic>,
     missing: Vec<NormalizedMergeStatistic>,
-    total: Vec<NormalizedMergeStatistic>,
+    total: Vec<NormalizedPath>,
 }
 impl DerivationData {
     pub fn new_in_progress(
         features: Vec<NormalizedMergeStatistic>,
         initial_commit: CommitHash,
-        previously_finished: &Self,
+        previous: &Self,
     ) -> Self {
         let uuid = Uuid::new_v4();
-        match previously_finished.get_state() {
+        match previous.get_state() {
             DerivationState::InProgress => Self {
-                id: previously_finished.id.clone(),
-                initial_commit: previously_finished.initial_commit.clone(),
-                state: previously_finished.state.clone(),
-                completed: previously_finished.completed.clone(),
-                missing: previously_finished.missing.clone(),
-                total: previously_finished.total.clone(),
+                id: previous.id.clone(),
+                initial_commit: previous.initial_commit.clone(),
+                state: previous.state.clone(),
+                completed: previous.completed.clone(),
+                missing: previous.missing.clone(),
+                total: previous.total.clone(),
             },
             DerivationState::None => {
-                let mut total = previously_finished.get_total().clone();
-                for f in features.iter() {
-                    if !total.contains(f) {
-                        total.push(f.clone());
-                    }
-                }
+                let mut mut_features = features.clone();
+                let intermediate: Vec<NormalizedPath> = previous
+                    .total
+                    .iter()
+                    .map(|p| {
+                        if let Some(feature) = features
+                            .iter()
+                            .find(|f| f.get_path().strip_version() == p.strip_version()) {
+                            mut_features.retain(|f| f != feature);
+                            match feature.get_stat() {
+                                MergeResult::UpToDate => p.clone(),
+                                _ => feature.get_path().clone(),
+                            }
+                        } else {
+                            p.clone()
+                        }
+                    })
+                    .collect();
+                let mut total = intermediate.clone();
+                total.extend(mut_features.iter().map(|f| f.get_path().clone()));
                 Self {
                     id: uuid.to_string(),
                     initial_commit,
@@ -103,8 +117,11 @@ impl DerivationData {
     pub fn get_missing(&self) -> &Vec<NormalizedMergeStatistic> {
         &self.missing
     }
-    pub fn get_total(&self) -> &Vec<NormalizedMergeStatistic> {
+    pub fn get_total(&self) -> &Vec<NormalizedPath> {
         &self.total
+    }
+    pub fn get_total_without_versions(&self) -> Vec<NormalizedPath> {
+        self.total.iter().map(|p| p.strip_version()).collect()
     }
     pub fn get_state(&self) -> &DerivationState {
         &self.state
@@ -361,8 +378,7 @@ impl<'a> DerivationManager<'a> {
     pub fn update_product(&mut self, optimize: bool) -> Result<DerivationData, UpdateProductError> {
         match self.current_state.get_state() {
             DerivationState::None => {
-                let all_features: Vec<NormalizedPath> =
-                    self.current_state.get_total().to_normalized_paths();
+                let all_features = self.current_state.get_total_without_versions();
                 let node_paths = self.git.assert_paths::<ConcreteFeature>(&all_features)?;
                 Ok(self.initialize_derivation(node_paths, optimize)?)
             }

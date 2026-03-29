@@ -518,9 +518,9 @@ impl Display for Conflict2DMatrix {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut result = String::new();
         for (k, v) in &self.matrix {
-            result += k.to_string().as_str();
+            result += format!("Key: {}\n", k.formatted_with_version(true)).as_str();
             for (_, value) in v {
-                result += format!("  {}\n", value).as_str();
+                result += format!("  Value: {}\n", value).as_str();
             }
         }
         f.write_str(result.as_str())
@@ -707,7 +707,7 @@ impl<'a> ConflictAnalyzer<'a> {
             statistics.push(result.clone());
             if result.contains_conflicts() {
                 conflicting_with_base
-                    .push(result.get(0).unwrap().get_path().try_convert_to().unwrap());
+                    .push(result.get(0).unwrap().get_path().clone());
             }
         }
         let to_test_with_base: Vec<NodePath<AnyGitObject>> = paths
@@ -715,9 +715,14 @@ impl<'a> ConflictAnalyzer<'a> {
             .filter(|path| !conflicting_with_base.contains(&path))
             .cloned()
             .collect();
-        let _to_test_without_base: Vec<NodePath<AnyGitObject>> = paths
+        let to_test_without_base: Vec<NodePath<AnyGitObject>> = paths
             .iter()
             .filter(|path| conflicting_with_base.contains(&path))
+            .cloned()
+            .collect();
+        let to_test_against_without_base: Vec<NodePath<AnyGitObject>> = paths
+            .iter()
+            .filter(|path| !to_test_without_base.contains(&path))
             .cloned()
             .collect();
 
@@ -735,7 +740,13 @@ impl<'a> ConflictAnalyzer<'a> {
             statistics.push(new);
         }
         self.logger.debug("Checking conflicting without base");
-        // TODO
+        for without_base in self
+            .checker
+            .check_n_against_permutations(&to_test_without_base, &to_test_against_without_base, &1)
+        {
+            let result = without_base?;
+            statistics.push(result);
+        }
         self.checker.clean_up();
         let matrix = Conflict2DMatrix::new(&statistics);
         Ok(matrix)

@@ -158,7 +158,7 @@ impl CommandInterface for CheckCommand {
                 if state.get_total().len() == 0 {
                     return Err("Nothing to check against: product not derived yet".into());
                 }
-                let features = state.get_total().to_normalized_paths();
+                let features = state.get_total_without_versions();
                 let node_paths = context.git.assert_paths::<AnyGitObject>(&features)?;
                 let mut final_paths: Vec<NodePath<AnyGitObject>> =
                     vec![product.try_convert_to().unwrap()];
