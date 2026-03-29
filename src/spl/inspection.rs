@@ -35,7 +35,7 @@ impl<'a> InspectionManager<'a> {
                         let derivation_commit = DerivationCommit::new(commit.clone(), maybe_data);
                         Ok(Some(derivation_commit))
                     } else {
-                        let pointer = maybe_data.get_pointer().clone().unwrap();
+                        let pointer = maybe_data.get_previous();
                         match git.get_commit_from_hash(pointer) {
                             Ok(next_commit) => get_last_commit(&next_commit, git),
                             Err(error) => {
@@ -57,20 +57,30 @@ impl<'a> InspectionManager<'a> {
         let last_commit = self.git.get_commit(product)?;
         get_last_commit(&last_commit, &self.git)
     }
+    
+    pub fn get_last_derivation_update(
+        &self,
+        product: &NodePath<ConcreteProduct>,
+    ) -> Result<DerivationMetadata, Box<dyn Error>> {
+        let last_commit = self.get_last_derivation_commit(&product)?;
+        if let Some(last_commit) = last_commit {
+            Ok(last_commit.get_metadata().clone())
+        } else {
+            let current_commit = self.git.get_commit(product)?;
+            let data = DerivationMetadata::new(
+                current_commit.get_hash().clone(),
+                Some(DerivationData::new_initial(current_commit.get_hash().clone())),
+            );
+            Ok(data)
+        }
+    }
 
     pub fn get_last_derivation_state(
         &self,
         product: &NodePath<ConcreteProduct>,
     ) -> Result<DerivationData, Box<dyn Error>> {
-        let last_commit = self.get_last_derivation_commit(&product)?;
-        if let Some(last_commit) = last_commit {
-            Ok(last_commit.get_metadata().get_data().unwrap().clone())
-        } else {
-            let current_commit = self.git.get_commit(product)?;
-            Ok(DerivationData::new_initial(
-                current_commit.get_hash().clone(),
-            ))
-        }
+        let last = self.get_last_derivation_update(product)?;
+        Ok(last.get_data().unwrap().clone())
     }
 
     pub fn find_products_containing_feature(

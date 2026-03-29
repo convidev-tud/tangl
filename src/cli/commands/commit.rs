@@ -114,7 +114,7 @@ fn handle_product(
             _ => {}
         }
         let new_pointer =
-            DerivationMetadata::new(Some(state.get_commit().get_hash().clone()), None);
+            DerivationMetadata::new(state.get_commit().get_hash().clone(), None);
         Ok(Some(CommitMetadataContainer::new(&new_pointer)?))
     } else {
         Ok(None)

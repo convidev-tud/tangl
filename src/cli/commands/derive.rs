@@ -128,7 +128,7 @@ fn handle_continue(
     logger: &TanglLogger,
     git: &GitInterface,
 ) -> Result<(), Box<dyn Error>> {
-    let old = derivation_manager.get_current_state();
+    let old = derivation_manager.get_current_state().clone();
     let next = match derivation_manager.continue_derivation() {
         Ok(state) => state,
         Err(error) => {
@@ -144,7 +144,7 @@ fn handle_continue(
         .get_completed()
         .iter()
         .filter_map(|data| {
-            if !old.get_completed().contains(data) {
+            if !old.get_data().unwrap().get_completed().contains(data) {
                 Some(data.clone())
             } else {
                 None
@@ -213,8 +213,9 @@ impl CommandDefinition for DeriveCommand {
                     .help("Abort the ongoing derivation process"),
                 Arg::new(RESET)
                     .long(RESET)
+                    .action(ArgAction::SetTrue)
                     .exclusive(true)
-                    .help("Reset the ongoing derivation process to the last state"),
+                    .help("Reset the ongoing derivation process to the last step"),
                 Arg::new(OPTIMIZE)
                     .short('o')
                     .long(OPTIMIZE)
@@ -252,7 +253,7 @@ impl CommandInterface for DeriveCommand {
             .arg_helper
             .get_argument_value::<bool>(CONTINUE)
             .unwrap();
-        let abort_derivation = context
+        let mut abort_derivation = context
             .arg_helper
             .get_argument_value::<bool>(ABORT)
             .unwrap();
@@ -264,21 +265,40 @@ impl CommandInterface for DeriveCommand {
             .arg_helper
             .get_argument_value::<bool>(UPDATE)
             .unwrap();
+        let reset = context
+            .arg_helper
+            .get_argument_value::<bool>(RESET)
+            .unwrap();
         let file_path = context.arg_helper.get_argument_value::<String>(FROM_FILE);
 
         let features = context.git.assert_paths(&all_feature_paths)?;
         let mut derivation_manager =
             DerivationManager::new(&product_path, &context.git, &context.logger)?;
 
+        if reset {
+            let state = derivation_manager.get_current_state();
+            let data = state.get_data().unwrap();
+            if state.get_previous() == data.get_initial_commit() {
+                abort_derivation = true;
+            } else {
+                let state = derivation_manager.reset_derivation()?;
+                context.logger.info(format!(
+                    "Reset to last state ({})",
+                    state.get_previous()
+                ));
+                return Ok(())
+            }
+        }
+
         if abort_derivation {
             let state = derivation_manager.abort_derivation()?;
             context.logger.info(format!(
                 "Successfully aborted derivation {}",
-                state.get_id()
+                state.get_data().unwrap().get_id()
             ));
             context.logger.info(format!(
                 "Reset to state before derivation ({})",
-                state.get_initial_commit()
+                state.get_data().unwrap().get_initial_commit()
             ));
             return Ok(());
         } else if !features.is_empty() {

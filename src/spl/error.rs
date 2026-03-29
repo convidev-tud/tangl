@@ -95,6 +95,26 @@ impl Display for AbortDerivationError {
 }
 
 #[derive(Debug)]
+pub enum ResetDerivationError {
+    Git(GitError),
+    NoDerivationInProgress,
+}
+impl Error for ResetDerivationError {}
+impl From<GitError> for ResetDerivationError {
+    fn from(value: GitError) -> Self {
+        Self::Git(value)
+    }
+}
+impl Display for ResetDerivationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Git(e) => e.fmt(f),
+            Self::NoDerivationInProgress => f.write_str("fatal: no derivation in progress"),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum UpdateProductError {
     PathAssertion(PathAssertionError),
     Serde(serde_json::Error),
@@ -144,6 +164,11 @@ impl Display for OptimizeMergeOrderError {
 impl From<PathAssertionError> for OptimizeMergeOrderError {
     fn from(value: PathAssertionError) -> Self {
         Self::PathAssertion(value)
+    }
+}
+impl From<GitError> for OptimizeMergeOrderError {
+    fn from(value: GitError) -> Self {
+        Self::PathAssertion(value.into())
     }
 }
 impl From<DerivationCommitError> for OptimizeMergeOrderError {
