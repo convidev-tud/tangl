@@ -292,7 +292,7 @@ impl<'a> DerivationManager<'a> {
                 .collect(),
             &self.product.try_convert_to().unwrap(),
         )?;
-        let new_order = if optimize_order {
+        let new_order = if optimize_order && order.len() > 1 {
             matrix.estimate_best_path(&self.product.try_convert_to().unwrap())
         } else {
             matrix.predict_conflicts(&self.product, &order)

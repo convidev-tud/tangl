@@ -208,7 +208,7 @@ impl<B: IsGitObject, C: IsGitObject> MergeChainStatistic<B, C> {
         all.len()
     }
     pub fn all_up_to_date(&self) -> bool {
-        if self.chain.is_empty() || self.chain.len() == 1 {
+        if self.chain.is_empty() {
             true
         } else {
             self.get_n_up_to_date() == self.chain.len()
@@ -576,6 +576,9 @@ impl Conflict2DMatrix {
         let mut missing: Vec<NodePath<AnyGitObject>> = self.matrix.keys().cloned().collect();
         let start = base_path.try_convert_to()?;
         missing.retain(|k| k != &start);
+        if missing.len() == 0 {
+            panic!("Path estimation does only work if there are more keys than the base itself.")
+        }
         let mut final_path = vec![(start, MergeStatistics::new(MergeStatisticWeight::Simple))];
         while missing.len() > 0 {
             let voters = final_path.iter().map(|(k, _)| k.clone()).collect();
