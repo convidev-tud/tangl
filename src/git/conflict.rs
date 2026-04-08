@@ -560,8 +560,7 @@ impl Conflict2DMatrix {
         )> = vec![];
         for path in order.iter() {
             let converted = path.try_convert_to()?;
-            let voters = final_path.iter().map(|(k, _)| k.clone()).collect();
-            let votes = self.calculate_votes(&start, &voters, &vec![converted.clone()]);
+            let votes = self.calculate_votes(&start, &final_path, &vec![converted.clone()]);
             let vote = votes.get(&converted).unwrap();
             final_path.push((converted, vote.clone()));
         }
@@ -583,8 +582,7 @@ impl Conflict2DMatrix {
             MergeStatisticComparator<AnyGitObject>,
         )> = vec![];
         while missing.len() > 0 {
-            let voters = final_path.iter().map(|(k, _)| k.clone()).collect();
-            let votes = Self::reverse_votes(self.calculate_votes(&start, &voters, &missing));
+            let votes = Self::reverse_votes(self.calculate_votes(&start, &final_path, &missing));
             let max_vote = votes.keys().max().unwrap();
             let max_candidates = &votes[&max_vote];
             let winner = match max_candidates.len() {
@@ -639,7 +637,7 @@ impl Conflict2DMatrix {
     fn calculate_votes(
         &self,
         base: &NodePath<AnyGitObject>,
-        voters: &Vec<NodePath<AnyGitObject>>,
+        voters: &Vec<(NodePath<AnyGitObject>, MergeStatisticComparator<AnyGitObject>)>,
         targets: &Vec<NodePath<AnyGitObject>>,
     ) -> HashMap<NodePath<AnyGitObject>, MergeStatisticComparator<AnyGitObject>> {
         let mut votes: HashMap<NodePath<AnyGitObject>, MergeStatisticComparator<AnyGitObject>> =
@@ -651,13 +649,15 @@ impl Conflict2DMatrix {
                 statistics.push(by_base.clone());
             } else {
                 let mut include_base = true;
-                for voter in voters.iter() {
+                for (voter, their_votes) in voters.iter() {
                     let opinion_of_base = self.matrix[base].get(voter).unwrap();
                     if opinion_of_base.get_stat() == &MergeResult::Success {
                         include_base = false;
                     }
-                    let statistic = self.matrix[voter].get(candidate).unwrap();
-                    statistics.push(statistic.clone());
+                    if their_votes.get_lowest().get_stat() != &MergeResult::UpToDate {
+                        let statistic = self.matrix[voter].get(candidate).unwrap();
+                        statistics.push(statistic.clone());
+                    }
                 }
                 if include_base {
                     statistics.push(by_base.clone());

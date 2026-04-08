@@ -15,7 +15,7 @@ fn handle_feature(
     inspector: &InspectionManager,
     context: &CommandContext,
 ) -> Result<Option<CommitMetadataContainer>, Box<dyn Error>> {
-    let checker = ConflictChecker::new(&context.git, CheckMode::CherryPick);
+    let checker = ConflictChecker::new(&context.git, CheckMode::Merge);
     let area = context.git.get_current_area()?;
     let all_features: Vec<NodePath<ConcreteFeature>> = area
         .clone()
@@ -44,13 +44,15 @@ fn handle_feature(
 
     if feature_statistics.n_conflicts() > 0 {
         context.logger.warn(format!(
-            "\nWarning: Commit stands in conflict with {} other feature(s)",
+            "\nWarning: Feature stands in conflict with {} other feature(s)",
             feature_statistics.n_conflicts().to_string().red()
         ));
         for conflict in feature_statistics.iter_conflicts() {
-            context
-                .logger
-                .warn(format!("  {}", conflict.display_as_path()));
+            for line in conflict.display_as_list() {
+                context
+                    .logger
+                    .warn(format!("  {line}"));
+            }
         }
     }
     for error in feature_statistics.iter_errors() {
@@ -71,13 +73,15 @@ fn handle_feature(
 
     if product_statistics.n_conflicts() > 0 {
         context.logger.warn(format!(
-            "\nWarning: Commit stands in conflict with {} product(s) derived from this feature",
+            "\nWarning: Feature stands in conflict with {} product(s) derived from it",
             product_statistics.n_conflicts().to_string().red()
         ));
         for conflict in product_statistics.iter_conflicts() {
-            context
-                .logger
-                .warn(format!("  {}", conflict.display_as_path()));
+            for line in conflict.display_as_list() {
+                context
+                    .logger
+                    .warn(format!("  {line}"));
+            }
         }
     }
     for error in product_statistics.iter_errors() {

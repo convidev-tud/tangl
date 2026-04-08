@@ -101,8 +101,10 @@ impl DerivationData {
         let missing = old_missing.iter().find(|m| m.get_path() == feature);
         if let Some(missing) = missing {
             self.missing.retain(|m| m.get_path() != feature);
-            let new =
-                NormalizedMergeStatistic::new(missing.get_path().clone(), MergeResult::Success);
+            let new_state = if missing.get_stat() == &MergeResult::Conflict {
+                MergeResult::Success
+            } else { missing.get_stat().clone() };
+            let new = NormalizedMergeStatistic::new(missing.get_path().clone(), new_state);
             self.completed.push(new)
         }
         if self.missing.is_empty() {
